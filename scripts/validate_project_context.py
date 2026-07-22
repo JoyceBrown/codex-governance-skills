@@ -75,6 +75,16 @@ VAGUE_AGENT_PATTERNS = {
     "Chinese generic quality": re.compile(r"(?:编写|保持|确保)高质量代码"),
     "Chinese impossible perfection": re.compile(r"(?:不要|不能|永远不要)犯错"),
 }
+PLAN_FIELD_RE = re.compile(
+    r"^\s*(plan_id|status|authority|current_task_id|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+ROADMAP_CHECKBOX_RE = re.compile(r"^\s*[-*+]\s+\[\s*\]", re.MULTILINE)
+ALLOWED_PLAN_STATUSES = {"active", "paused", "completed", "superseded", "archived"}
+ALLOWED_AUTHORITIES = {"exclusive", "none"}
+ON_COMPLETE_RE = re.compile(
+    r"^(?:wait|resume:[A-Za-z0-9._-]+|activate:[A-Za-z0-9._-]+)$"
+)
 
 PROFILE_REQUIRED = {
     "minimal": ["README.md", "AGENTS.md"],
@@ -212,6 +222,254 @@ def substantive_lines(text: str) -> set[str]:
     return lines
 
 
+def planning_fields(text: str) -> dict[str, str]:
+    return {
+        key.lower(): value.strip()
+        for key, value in PLAN_FIELD_RE.findall(text)
+    }
+
+
+def has_heading(text: str, heading: str) -> bool:
+    return bool(
+        re.search(
+            rf"^##\s+{re.escape(heading)}\s*$",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+    )
+
+
+def validate_planning_authority(
+    root: Path,
+    files: list[Path],
+    errors: list[dict[str, str]],
+    warnings: list[dict[str, str]],
+    info: list[dict[str, object]],
+) -> None:
+    planning_records: list[tuple[Path, str, dict[str, str]]] = []
+    active_plans: list[str] = []
+    roadmap_paths: list[str] = []
+    checkpoint_paths: list[str] = []
+    undeclared_roadmap_authority: list[str] = []
+    undeclared_checkpoint_authority: list[str] = []
+
+    for path in files:
+        rel = path.relative_to(root).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+
+        fields = planning_fields(text)
+        name = path.name.lower()
+        is_plan = name in {"plan.md", "plans.md"} or "plan_id" in fields
+        is_roadmap = name == "roadmap.md"
+        is_checkpoint = rel == "docs/work/current.md" or fields.get("record_kind", "").lower() == "checkpoint"
+
+        if not (is_plan or is_roadmap or is_checkpoint):
+            continue
+        planning_records.append((path, text, fields))
+
+        if is_roadmap:
+            roadmap_paths.append(rel)
+            authority = fields.get("execution_authority", "").lower()
+            if not authority:
+                undeclared_roadmap_authority.append(rel)
+            elif authority != "none":
+                errors.append(
+                    {
+                        "code": "roadmap-has-execution-authority",
+                        "path": rel,
+                        "detail": f"execution_authority must be none, found {authority}",
+                    }
+                )
+            if ROADMAP_CHECKBOX_RE.search(text):
+                warnings.append(
+                    {
+                        "code": "actionable-roadmap-checklist",
+                        "path": rel,
+                        "detail": "unchecked tasks can be mistaken for currently authorized work",
+                    }
+                )
+
+        if is_checkpoint:
+            checkpoint_paths.append(rel)
+            if fields.get("record_kind", "").lower() != "checkpoint":
+                warnings.append(
+                    {
+                        "code": "checkpoint-kind-undeclared",
+                        "path": rel,
+                        "detail": "declare record_kind: checkpoint",
+                    }
+                )
+            checkpoint_authority = fields.get("execution_authority", "").lower()
+            if not checkpoint_authority:
+                undeclared_checkpoint_authority.append(rel)
+            elif checkpoint_authority != "none":
+                errors.append(
+                    {
+                        "code": "checkpoint-has-execution-authority",
+                        "path": rel,
+                        "detail": f"execution_authority must be none, found {checkpoint_authority}",
+                    }
+                )
+
+        if not is_plan:
+            continue
+
+        status = fields.get("status", "").lower()
+        authority = fields.get("authority", "").lower()
+        if status and status not in ALLOWED_PLAN_STATUSES:
+            errors.append(
+                {
+                    "code": "invalid-plan-status",
+                    "path": rel,
+                    "detail": status,
+                }
+            )
+        if authority and authority not in ALLOWED_AUTHORITIES:
+            errors.append(
+                {
+                    "code": "invalid-plan-authority",
+                    "path": rel,
+                    "detail": authority,
+                }
+            )
+        if authority == "exclusive" and status != "active":
+            errors.append(
+                {
+                    "code": "exclusive-plan-not-active",
+                    "path": rel,
+                    "detail": f"status is {status or 'missing'}",
+                }
+            )
+
+        if status != "active":
+            continue
+
+        active_plans.append(rel)
+        if rel != "PLANS.md":
+            errors.append(
+                {
+                    "code": "active-plan-not-canonical",
+                    "path": rel,
+                    "detail": "the active execution plan must be root PLANS.md",
+                }
+            )
+        required = ("plan_id", "authority", "current_task_id", "on_complete")
+        missing = [field for field in required if not fields.get(field)]
+        if missing:
+            errors.append(
+                {
+                    "code": "incomplete-active-plan",
+                    "path": rel,
+                    "detail": ", ".join(missing),
+                }
+            )
+        if authority and authority != "exclusive":
+            errors.append(
+                {
+                    "code": "active-plan-not-exclusive",
+                    "path": rel,
+                    "detail": authority,
+                }
+            )
+
+        on_complete = fields.get("on_complete", "")
+        if on_complete and not ON_COMPLETE_RE.fullmatch(on_complete):
+            errors.append(
+                {
+                    "code": "ambiguous-on-complete",
+                    "path": rel,
+                    "detail": on_complete,
+                }
+            )
+
+        for heading in ("Allowed scope", "Excluded scope", "Validation"):
+            if not has_heading(text, heading):
+                errors.append(
+                    {
+                        "code": "missing-plan-section",
+                        "path": rel,
+                        "detail": heading,
+                    }
+                )
+
+        current_task = fields.get("current_task_id", "")
+        if current_task and text.count(current_task) < 2:
+            warnings.append(
+                {
+                    "code": "current-task-not-listed",
+                    "path": rel,
+                    "detail": f"{current_task} appears only in metadata",
+                }
+            )
+
+    for rel in undeclared_roadmap_authority:
+        target = errors if active_plans else warnings
+        target.append(
+            {
+                "code": "roadmap-authority-undeclared",
+                "path": rel,
+                "detail": "declare execution_authority: none when the roadmap coexists with execution plans",
+            }
+        )
+
+    for rel in undeclared_checkpoint_authority:
+        target = errors if active_plans else warnings
+        target.append(
+            {
+                "code": "checkpoint-authority-undeclared",
+                "path": rel,
+                "detail": "declare execution_authority: none",
+            }
+        )
+
+    if len(active_plans) > 1:
+        errors.append(
+            {
+                "code": "multiple-active-plans",
+                "path": ".",
+                "detail": ", ".join(active_plans),
+            }
+        )
+
+    root_agents = root / "AGENTS.md"
+    if active_plans and root_agents.exists():
+        try:
+            agent_text = root_agents.read_text(encoding="utf-8").lower()
+        except (OSError, UnicodeDecodeError):
+            agent_text = ""
+        missing_routes = []
+        if "plans.md" not in agent_text:
+            missing_routes.append("PLANS.md")
+        if roadmap_paths and "roadmap" not in agent_text:
+            missing_routes.append("roadmap")
+        if checkpoint_paths and "current.md" not in agent_text:
+            missing_routes.append("docs/work/current.md")
+        if missing_routes:
+            errors.append(
+                {
+                    "code": "missing-plan-authority-routing",
+                    "path": "AGENTS.md",
+                    "detail": ", ".join(missing_routes),
+                }
+            )
+
+    info.append(
+        {
+            "code": "planning-authority",
+            "active_plans": active_plans,
+            "roadmaps": roadmap_paths,
+            "checkpoints": checkpoint_paths,
+            "artifacts": [
+                path.relative_to(root).as_posix()
+                for path, _, _ in planning_records
+            ],
+        }
+    )
+
+
 def validate_command_claims(
     root: Path,
     files: list[Path],
@@ -342,6 +600,7 @@ def validate(root: Path, profile: str) -> dict[str, object]:
                 errors.append({"code": "broken-link", "path": rel, "detail": raw_target})
 
     validate_command_claims(root, files, errors, warnings)
+    validate_planning_authority(root, files, errors, warnings, info)
 
     agent_files = [
         path

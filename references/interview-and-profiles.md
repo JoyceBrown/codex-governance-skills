@@ -16,6 +16,9 @@ Ask only for missing information that changes the result. Prefer repository evid
 | Collaboration | Auth, roles, or workflow may change | Is this for one person or multiple users with different permissions? |
 | Commands | The repository does not establish them | What are the authoritative install, start, test, and build commands? |
 | Deployment | Operations documentation may be needed | Where will the project run, and who operates it? |
+| Current focus | Several plans or todo lists could appear active | What do you want Codex to finish first right now? |
+| Completion routing | Work should continue across plans or sessions | When that work is done, should Codex stop for review, return to a named task, or start another named task? |
+| Temporary exclusions | The user is reprioritizing work | Which areas should Codex leave alone for now? |
 
 Do not ask about choices that can be deferred safely. Mark unresolved decisions in the relevant document instead.
 
@@ -48,7 +51,11 @@ Then add only relevant items:
 - `docs/operations.md` for deployment, backup, observability, or recovery
 - `docs/decisions/` for durable architectural choices
 - `PLANS.md` for long-running execution plans
+- `docs/roadmap.md` only when long-term outcomes need a separate non-executable owner
+- `docs/work/current.md` for cross-session checkpoint state, never as a second task source
 - nested `AGENTS.md` files for materially different subtrees
+
+When planning artifacts are needed, read `planning-authority.md`. Do not enable that module merely because the project is Standard.
 
 ## Advanced profile
 
@@ -67,6 +74,8 @@ Possible additions:
 - scheduled tasks for recurring or monitoring work
 
 Advanced does not mean generate all of these. Select each one independently using `surface-guide.md`.
+
+Planning authority is not inherently Advanced. It is an independent module selected from demonstrated planning complexity or repeated plan confusion, not from project prestige or team size.
 
 ## Nested AGENTS.md test
 

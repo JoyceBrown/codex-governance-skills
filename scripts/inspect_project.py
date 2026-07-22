@@ -204,6 +204,20 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         if path.lower().endswith(".md")
         and (path.lower().startswith("docs/") or "/docs/" in path.lower())
     )
+    planning_names = {
+        "current.md",
+        "plan.md",
+        "plans.md",
+        "roadmap.md",
+        "tasks.md",
+        "todo.md",
+    }
+    planning_files = sorted(
+        path
+        for path in rel_files
+        if path.lower().endswith(".md")
+        and Path(path).name.lower() in planning_names
+    )
     agent_files = sorted(
         path
         for path in rel_files
@@ -241,6 +255,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
             "readme": "README.md" if "README.md" in rel_set else None,
             "agents": agent_files,
             "docs": docs[:300],
+            "planning": planning_files[:100],
             "codex": codex_files[:300],
             "skills": skill_files[:300],
             "ci": ci_files[:100],
@@ -249,6 +264,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
             "existing_readme": "README.md" in rel_set,
             "existing_root_agents": "AGENTS.md" in rel_set,
             "existing_project_codex_config": ".codex/config.toml" in rel_set,
+            "multiple_planning_artifacts": len(planning_files) > 1,
             "requires_preservation_review": any(
                 item in rel_set
                 for item in ("README.md", "AGENTS.md", ".codex/config.toml")

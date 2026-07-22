@@ -1,33 +1,56 @@
-# Execution Plans
+# Active Execution Plan
 
-Use an execution plan for work that spans multiple modules, has meaningful risk, or must survive a context reset.
+plan_id: {{PLAN_ID}}
+status: active
+authority: exclusive
+current_task_id: {{CURRENT_TASK_ID}}
+roadmap_reference: {{ROADMAP_MILESTONE_OR_NONE}}
+on_complete: {{WAIT_OR_RESUME_TASK_OR_ACTIVATE_PLAN}}
 
-Each plan must contain:
+Use this plan only for work that spans multiple modules, has meaningful risk, must survive a context reset, or needs explicit protection from competing plans. Remove this file when the project does not need a durable active plan.
 
 ## Objective
 
-State one measurable outcome.
+{{ONE_MEASURABLE_OUTCOME}}
 
-## Context
+## Authoritative context
 
-List only the files, documents, constraints, and prior decisions needed for this work.
+{{ONLY_THE_FILES_CONSTRAINTS_AND_PRIOR_DECISIONS_NEEDED}}
 
-## Scope
+## Allowed scope
 
-State what is included and excluded.
+{{WORK_THIS_PLAN_AUTHORIZES}}
 
-## Steps
+## Excluded scope
 
-Describe ordered, independently verifiable milestones.
+{{WORK_THIS_PLAN_MUST_NOT_START}}
 
-## Risks
+## Deferred work
 
-Explain failure modes, compatibility concerns, and recovery options.
+| Item | Reason deferred | Resume condition |
+| --- | --- | --- |
+| {{TASK_OR_MILESTONE}} | {{REASON}} | {{CONDITION}} |
+
+## Milestones
+
+| Task ID | Status | Verifiable outcome |
+| --- | --- | --- |
+| {{CURRENT_TASK_ID}} | in_progress | {{OUTCOME}} |
+
+Use only `pending`, `in_progress`, `blocked`, or `completed` for task status. Keep exactly one `in_progress` task unless the plan explicitly supports independent parallel work.
+
+## Risks and recovery
+
+{{FAILURE_MODES_COMPATIBILITY_AND_RECOVERY}}
 
 ## Validation
 
-List commands and observable behavior that prove completion.
+{{COMMANDS_AND_OBSERVABLE_ACCEPTANCE_CRITERIA}}
+
+## Validation evidence
+
+{{RESULTS_EXIT_CODES_SCREENSHOTS_DIFFS_OR_OTHER_EVIDENCE}}
 
 ## Decision log
 
-Record decisions that changed the plan and why.
+{{DECISIONS_THAT_CHANGED_PRIORITY_SCOPE_OR_SEQUENCE}}

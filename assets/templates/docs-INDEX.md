@@ -12,5 +12,7 @@ Use this page to find the authoritative document for each topic.
 | Testing strategy | [`testing.md`](testing.md) |
 | Deployment and recovery | [`operations.md`](operations.md) |
 | Durable technical decisions | [`decisions/`](decisions/) |
+| Long-term direction, without execution authority | [`roadmap.md`](roadmap.md) |
+| Current progress and handoff state | [`work/current.md`](work/current.md) |
 
-Remove rows for documents that do not exist.
+Remove every optional row whose document was not created. Do not leave planned links or empty placeholder documents merely to preserve this table.

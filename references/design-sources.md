@@ -26,3 +26,7 @@ The result is not an "AI configuration bundle." It is a semantic project context
 3. Optional capabilities appear only after a concrete need exists.
 4. Repository evidence overrides guessed templates.
 5. Humans can understand and maintain every generated artifact.
+
+## Internal design standard
+
+`skill-design-principles.md` is the maintenance standard distilled from the user discussion that produced this Skill. Its central rule is that the Skill's diagnostic ability should be comprehensive while its generated structure remains minimal and evidence-based. It also defines natural-language entry, progressive disclosure, evidence states, planning authority, validation-based completion, and safe degradation for cases the workflow cannot classify confidently.

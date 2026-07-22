@@ -11,7 +11,9 @@ Use the smallest surface whose scope matches the information or behavior.
 | Root `AGENTS.md` | Durable repository-wide Codex working agreements | Repository root | Commands or constraints should apply broadly | Full project description |
 | Nested `AGENTS.md` | Local differences from root guidance | Relevant subtree | The subtree has materially different rules | Repeating root rules |
 | `AGENTS.override.md` | Temporary or complete replacement at one instruction level | Beside the `AGENTS.md` it replaces | The ordinary file must be deliberately shadowed | Small additive differences |
-| `PLANS.md` | Contract for long, risky, multi-stage implementation plans | Repository root or documented location | Work must survive context changes | Everyday task lists |
+| `docs/roadmap.md` | Long-term outcomes, dependencies, and sequencing rationale without task authority | `docs/roadmap.md` | The project needs durable direction separate from current execution | Current tasks or unchecked implementation lists |
+| `PLANS.md` | The one active contract for long, risky, multi-stage implementation work | Repository root | Work must survive context changes or competing plans need explicit authority | Roadmap aspirations or everyday task lists |
+| `docs/work/current.md` | Progress evidence, blockers, and exact handoff state | `docs/work/current.md` | Work must resume accurately across sessions | Selecting or authorizing a new task |
 | `.codex/config.toml` | Trusted project-specific Codex runtime defaults | `.codex/config.toml` | The repository needs settings different from user defaults | Product facts or secrets |
 | Skill | Repeatable task workflow with references or scripts | `.agents/skills/<name>/` | The same non-trivial process recurs | Rules that apply to every task |
 | MCP or connector | Live external context or actions | Codex/plugin configuration | Work requires GitHub, Figma, databases, internal services, or other live systems | Static repository documentation |
@@ -37,6 +39,10 @@ Codex loads at most one instruction file per directory and prefers `AGENTS.overr
 ### Skills
 
 Create a Skill only after identifying a focused repeated workflow, its trigger, its inputs, and its definition of done. Prefer scripts for deterministic repeated mechanics and references for detail loaded on demand.
+
+### Planning authority
+
+Enable planning authority only when long-running work, competing plans, cross-session state, reprioritization, or a demonstrated plan-selection failure exists. Keep one active execution authority, mark roadmaps and checkpoints non-executable, and put durable routing rules in root `AGENTS.md`. See `planning-authority.md`.
 
 ### MCP
 

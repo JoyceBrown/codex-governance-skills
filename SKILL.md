@@ -1,11 +1,13 @@
 ---
 name: bootstrap-codex-project
-description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, deciding whether nested AGENTS.md files are needed, preparing a long-running project for Codex, or auditing stale and duplicated AI instructions. Generate advanced Codex configuration, skills, rules, hooks, MCP guidance, or custom agents only when project evidence or the user explicitly requires them.
+description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
 ---
 
 # Bootstrap Codex Project
 
 Build the smallest context system that lets a human understand the project and lets Codex work correctly. Ground every artifact in the user's brief or repository facts. Prefer a few accurate files over a complete-looking framework.
+
+Treat the Skill as a translator between natural-language intent and professional project structure. Keep the user entry simple, make the internal diagnosis broad, and keep generated output proportional to demonstrated need. Do not require users to know Codex surfaces or planning terminology before the Skill can help them.
 
 ## Core model
 
@@ -14,6 +16,8 @@ Keep three semantic layers separate:
 1. **Project facts**: `README.md`, `docs/`, code, tests, and decision records explain what the project is and how it works.
 2. **Codex guidance**: `AGENTS.md` explains how Codex should work in this repository.
 3. **Optional capabilities**: `.codex/`, `.agents/skills/`, MCP, rules, hooks, custom agents, and scheduled tasks exist only for demonstrated needs.
+
+When long-running work needs plans, keep direction, execution authority, and progress separate. A roadmap describes future direction; an active plan authorizes current work; a checkpoint records progress. Do not create this planning layer for an ordinary short task.
 
 Assign every fact one canonical owner. Link to that owner instead of copying the same explanation into several files.
 
@@ -51,9 +55,11 @@ Normalize the available information into:
 - repository map and verified commands
 - evidence state for material claims
 - quality, safety, and completion requirements
+- current focus and any explicitly deferred work
+- whether a roadmap, active plan, or cross-session checkpoint already exists
 - unresolved decisions
 
-Read `references/interview-and-profiles.md` when important information is missing or when choosing an output profile. Ask no more than three questions at a time, and ask only questions whose answers change the architecture, generated artifacts, or safety posture. When a reversible assumption is sufficient, state it and continue.
+Read `references/interview-and-profiles.md` when important information is missing or when choosing an output profile. Ask no more than three questions at a time, use plain language, and ask only questions whose answers change the architecture, generated artifacts, plan authority, or safety posture. When a reversible assumption is sufficient, state it and continue.
 
 ### 2. Inspect before writing
 
@@ -63,7 +69,8 @@ For non-empty targets:
 2. Distinguish repository facts from human policy. Derive facts from files; obtain policy from the user or existing authoritative instructions.
 3. Preserve accurate human-authored content.
 4. Identify contradictions, stale paths, duplicated explanations, and guessed commands.
-5. Never overwrite an existing file merely to match a template.
+5. Identify roadmap, plan, todo, and current-work files that could all appear executable.
+6. Never overwrite an existing file merely to match a template.
 
 ### 3. Choose the smallest output profile
 
@@ -75,7 +82,22 @@ Use one of the profiles defined in `references/interview-and-profiles.md`:
 
 Do not equate project size with configuration count. A large project may need only precise documentation and layered `AGENTS.md` files. A small high-risk project may need rules or hooks.
 
-### 4. Present the artifact plan
+### 4. Select optional modules
+
+Select optional modules independently from the output profile. A Standard project does not automatically need planning controls, and a Minimal project may need one when it has a concrete recurring failure.
+
+Enable the planning-authority module only when at least one signal exists:
+
+- work must survive context resets or multiple sessions
+- the repository contains both a long-term roadmap and a current plan
+- the user temporarily reprioritizes work without abandoning long-term goals
+- Codex has selected tasks from the wrong plan
+- several plan, todo, or status files can appear simultaneously actionable
+- the user explicitly requests autonomous continuation with controlled stopping conditions
+
+When enabled, read `references/planning-authority.md` completely before proposing artifacts. Use its plain-language questions and migrate existing content conservatively. Do not make users design plan IDs, authority markers, or file routing themselves.
+
+### 5. Present the artifact plan
 
 Before broad edits, show a compact plan with four groups:
 
@@ -86,7 +108,7 @@ Before broad edits, show a compact plan with four groups:
 
 Give one reason for each non-obvious file. If the user explicitly requested generation, proceed after the plan unless an existing file would be replaced, a security-sensitive setting would change, or a consequential command would run. Confirm those cases before acting.
 
-### 5. Generate semantic artifacts
+### 6. Generate semantic artifacts
 
 Use the matching files under `assets/templates/` as structural starting points. Adapt them to the project; do not leave unused sections or template placeholders.
 
@@ -98,14 +120,17 @@ Apply these ownership rules:
 - Put entity meaning and invariants in `docs/data-model.md` when the domain is non-trivial.
 - Put ambiguous domain terms in `docs/glossary.md`.
 - Put durable decisions and tradeoffs in `docs/decisions/`.
-- Put current temporary progress in `docs/work/current.md`, not in permanent guidance.
+- Put long-term direction in `docs/roadmap.md` only when the project has a real roadmap. It does not authorize work.
+- Put the one active long-running execution plan in `PLANS.md` when planning authority is enabled.
+- Put temporary progress and cross-session handoff state in `docs/work/current.md`. It records work but does not authorize new work.
 - Put repository-wide working rules, verified commands, constraints, and completion checks in root `AGENTS.md`.
+- When planning authority is enabled, put the execution precedence and roadmap prohibition in root `AGENTS.md` so they load without invoking this Skill again.
 - Add a nested `AGENTS.md` only when that subtree has materially different commands, constraints, ownership, or risk.
-- Use `PLANS.md` only when long or risky work benefits from a durable execution-plan contract.
+- Do not create `PLANS.md`, `docs/roadmap.md`, or `docs/work/current.md` as an inseparable bundle. Create only the artifacts justified by the project, but make their authority explicit whenever more than one exists.
 
 Read `references/surface-guide.md` before adding any optional Codex surface. Never generate project-local model preferences, broad permissions, external integrations, hooks, command rules, or custom agents from a vague project description.
 
-### 6. Keep instructions operational
+### 7. Keep instructions operational
 
 Write `AGENTS.md` as an operational index, not a project encyclopedia:
 
@@ -115,10 +140,11 @@ Write `AGENTS.md` as an operational index, not a project encyclopedia:
 - Put formatting and mechanical checks in tooling or CI when possible.
 - Keep global rules at the root and local differences near their scope.
 - Remove vague rules such as "write good code" or "follow best practices".
+- Prefer observable acceptance criteria and validation evidence over instructions to "self-debate" or "be thorough".
 
 Match the language of generated human-facing documents to the user's language unless the repository already has a clear documentation language policy.
 
-### 7. Validate
+### 8. Validate
 
 Run:
 
@@ -132,18 +158,22 @@ Then verify:
 - every command is present in project configuration or has been successfully run
 - no `{{PLACEHOLDER}}` remains
 - no concept has conflicting definitions across files
+- no roadmap or checkpoint can be mistaken for the active execution plan
+- at most one plan is marked active with exclusive execution authority
+- active-plan metadata, current task, exclusions, validation, and completion behavior are explicit
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
 - relevant project tests or checks pass when implementation files changed
 
 Treat validator warnings as review prompts, not automatic failures. Fix errors and explain any intentionally retained warning.
 
-### 8. Report the result
+### 9. Report the result
 
 Summarize:
 
 - files created or updated
 - assumptions made
+- optional modules enabled and the evidence that justified each one
 - advanced surfaces deliberately omitted
 - validation performed
 - decisions still requiring the user
@@ -161,10 +191,14 @@ Do not claim the project is fully configured when commands, deployment, security
 - Do not enable full-access sandboxing or approval bypasses.
 - Do not add MCP servers, hooks, rules, plugins, agents, or automations without a concrete use case and an explained trust boundary.
 - Do not overwrite human-authored files without preserving their intent and showing the change.
+- Do not turn a roadmap into an executable checklist or silently choose work from it.
+- Do not force planning IDs, roadmaps, checkpoints, or strict governance onto projects that do not need them.
 - Do not initialize Git, commit, push, deploy, or install packages unless the user requested that broader action.
 
 ## Reference routing
 
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
+- Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
+- Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.
 - Read `references/design-sources.md` only when maintaining this skill or explaining how its design relates to existing open-source approaches.
