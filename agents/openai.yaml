@@ -1,0 +1,4 @@
+interface:
+  display_name: "Bootstrap Codex Project"
+  short_description: "Turn project ideas into Codex-ready context"
+  default_prompt: "Use $bootstrap-codex-project to turn my project idea or existing repository into a minimal, accurate Codex context system."
