@@ -76,12 +76,13 @@ VAGUE_AGENT_PATTERNS = {
     "Chinese impossible perfection": re.compile(r"(?:不要|不能|永远不要)犯错"),
 }
 PLAN_FIELD_RE = re.compile(
-    r"^\s*(plan_id|status|authority|current_task_id|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
+    r"^\s*(plan_id|status|authority|current_task_id|latest_change_id|latest_change_class|change_authority_reference|delegated_execution|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 ROADMAP_CHECKBOX_RE = re.compile(r"^\s*[-*+]\s+\[\s*\]", re.MULTILINE)
 ALLOWED_PLAN_STATUSES = {"active", "paused", "completed", "superseded", "archived"}
 ALLOWED_AUTHORITIES = {"exclusive", "none"}
+ALLOWED_CHANGE_CLASSES = {"task_adjustment", "priority_branch", "roadmap_change"}
 ON_COMPLETE_RE = re.compile(
     r"^(?:wait|resume:[A-Za-z0-9._-]+|activate:[A-Za-z0-9._-]+)$"
 )
@@ -356,7 +357,15 @@ def validate_planning_authority(
                     "detail": "the active execution plan must be root PLANS.md",
                 }
             )
-        required = ("plan_id", "authority", "current_task_id", "on_complete")
+        required = (
+            "plan_id",
+            "authority",
+            "current_task_id",
+            "latest_change_id",
+            "latest_change_class",
+            "change_authority_reference",
+            "on_complete",
+        )
         missing = [field for field in required if not fields.get(field)]
         if missing:
             errors.append(
@@ -374,6 +383,44 @@ def validate_planning_authority(
                     "detail": authority,
                 }
             )
+
+        change_class = fields.get("latest_change_class", "").lower()
+        if change_class and change_class not in ALLOWED_CHANGE_CLASSES:
+            errors.append(
+                {
+                    "code": "invalid-requirement-change-class",
+                    "path": rel,
+                    "detail": change_class,
+                }
+            )
+        authority_reference = fields.get("change_authority_reference", "").lower()
+        if change_class == "roadmap_change" and authority_reference in {"", "none"}:
+            errors.append(
+                {
+                    "code": "roadmap-change-without-authority-reference",
+                    "path": rel,
+                    "detail": "reference the durable product, architecture, compatibility, safety, or decision document",
+                }
+            )
+        if change_class == "priority_branch":
+            if not has_heading(text, "Deferred work"):
+                errors.append(
+                    {
+                        "code": "priority-branch-without-deferred-work",
+                        "path": rel,
+                        "detail": "record the paused work and its resume condition",
+                    }
+                )
+            lowered = text.lower()
+            for label in ("reason deferred", "impact", "resume condition"):
+                if label not in lowered:
+                    errors.append(
+                        {
+                            "code": "incomplete-priority-branch-record",
+                            "path": rel,
+                            "detail": label,
+                        }
+                    )
 
         on_complete = fields.get("on_complete", "")
         if on_complete and not ON_COMPLETE_RE.fullmatch(on_complete):
@@ -453,6 +500,25 @@ def validate_planning_authority(
                     "code": "missing-plan-authority-routing",
                     "path": "AGENTS.md",
                     "detail": ", ".join(missing_routes),
+                }
+            )
+        has_change_routing = all(
+            label in agent_text for label in ALLOWED_CHANGE_CLASSES
+        )
+        if not has_change_routing:
+            errors.append(
+                {
+                    "code": "missing-requirement-change-routing",
+                    "path": "AGENTS.md",
+                    "detail": ", ".join(sorted(ALLOWED_CHANGE_CLASSES)),
+                }
+            )
+        if "subagent" not in agent_text and "子代理" not in agent_text:
+            errors.append(
+                {
+                    "code": "missing-subagent-authority-routing",
+                    "path": "AGENTS.md",
+                    "detail": "state that delegated work cannot broaden scope or select roadmap work without explicit authority",
                 }
             )
 

@@ -1,6 +1,6 @@
 ---
 name: bootstrap-codex-project
-description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
+description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, classifying mid-project requirement changes, handing work to a new task or subagent, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
 ---
 
 # Bootstrap Codex Project
@@ -97,6 +97,8 @@ Enable the planning-authority module only when at least one signal exists:
 
 When enabled, read `references/planning-authority.md` completely before proposing artifacts. Use its plain-language questions and migrate existing content conservatively. Do not make users design plan IDs, authority markers, or file routing themselves.
 
+When the user adds or changes a requirement during ongoing work, or when work must continue in a new task, fork, or subagent, read `references/change-intake-and-agent-handoff.md` completely. Classify the change by its real effect, not by casual wording. Ask one plain-language question only when the answer changes durable project boundaries, what work should be restored later, or who has authority to alter the plan.
+
 ### 5. Present the artifact plan
 
 Before broad edits, show a compact plan with four groups:
@@ -125,6 +127,7 @@ Apply these ownership rules:
 - Put temporary progress and cross-session handoff state in `docs/work/current.md`. It records work but does not authorize new work.
 - Put repository-wide working rules, verified commands, constraints, and completion checks in root `AGENTS.md`.
 - When planning authority is enabled, put the execution precedence and roadmap prohibition in root `AGENTS.md` so they load without invoking this Skill again.
+- When planning authority is enabled, put durable requirement-change routing and subagent authority limits in root `AGENTS.md`; keep the active classification, latest user decision, and task-local delegation details in `PLANS.md` or the delegation message.
 - Add a nested `AGENTS.md` only when that subtree has materially different commands, constraints, ownership, or risk.
 - Do not create `PLANS.md`, `docs/roadmap.md`, or `docs/work/current.md` as an inseparable bundle. Create only the artifacts justified by the project, but make their authority explicit whenever more than one exists.
 
@@ -161,6 +164,9 @@ Then verify:
 - no roadmap or checkpoint can be mistaken for the active execution plan
 - at most one plan is marked active with exclusive execution authority
 - active-plan metadata, current task, exclusions, validation, and completion behavior are explicit
+- the latest material requirement change has one canonical class and updated only the existing or justified authority owners it actually affects
+- a new task can recover active work from repository artifacts, while a subagent receives an explicit bounded task packet
+- no subagent or task packet silently acquires roadmap, scope, or completion authority
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
 - relevant project tests or checks pass when implementation files changed
@@ -192,6 +198,8 @@ Do not claim the project is fully configured when commands, deployment, security
 - Do not add MCP servers, hooks, rules, plugins, agents, or automations without a concrete use case and an explained trust boundary.
 - Do not overwrite human-authored files without preserving their intent and showing the change.
 - Do not turn a roadmap into an executable checklist or silently choose work from it.
+- Do not assume a new task, fork, or subagent automatically knows the active objective, exclusions, acceptance criteria, or latest user decision.
+- Do not let a subagent reclassify requirements, change plan authority, broaden scope, or claim whole-project completion. A formal task takeover uses the new-task handoff contract instead of a subagent packet.
 - Do not force planning IDs, roadmaps, checkpoints, or strict governance onto projects that do not need them.
 - Do not initialize Git, commit, push, deploy, or install packages unless the user requested that broader action.
 
@@ -199,6 +207,7 @@ Do not claim the project is fully configured when commands, deployment, security
 
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
 - Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
+- Read `references/change-intake-and-agent-handoff.md` when requirements change during work or when a new task, fork, or subagent must continue the work.
 - Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.
 - Read `references/design-sources.md` only when maintaining this skill or explaining how its design relates to existing open-source approaches.

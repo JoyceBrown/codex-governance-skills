@@ -10,6 +10,7 @@ Use this module only when a project has long-running work, competing plans, cros
 - [Artifact ownership](#artifact-ownership)
 - [Active plan contract](#active-plan-contract)
 - [Reprioritization](#reprioritization)
+- [Mid-project requirement changes](#mid-project-requirement-changes)
 - [Existing repository migration](#existing-repository-migration)
 - [AGENTS.md contract](#agentsmd-contract)
 - [Validation](#validation)
@@ -86,6 +87,9 @@ plan_id
 status: active
 authority: exclusive
 current_task_id
+latest_change_id
+latest_change_class
+change_authority_reference
 on_complete
 ```
 
@@ -128,6 +132,16 @@ Record:
 
 Do not delete deferred tasks or mark them complete. Do not resume them merely because the current task became difficult.
 
+## Mid-project requirement changes
+
+Read `change-intake-and-agent-handoff.md` when the user changes a requirement during active work. Classify the effect as `task_adjustment`, `priority_branch`, or `roadmap_change`; the user does not need to know these labels.
+
+- A `task_adjustment` updates the current task and its acceptance criteria without changing roadmap authority.
+- A `priority_branch` updates `PLANS.md`, preserves deferred work, and states the resume condition and exact `on_complete` action.
+- A `roadmap_change` first updates its durable owner, such as product, architecture, compatibility, safety, or a decision record, then reconciles the active plan.
+
+Record `latest_change_id`, `latest_change_class`, and `change_authority_reference` in an active plan. Never interpret a wording cue such as "temporarily" as stronger evidence than the actual product or technical effect.
+
 ## Existing repository migration
 
 When several files appear actionable:
@@ -159,6 +173,8 @@ Adapt this contract to the repository language and paths:
 - Do not select work from README files, roadmaps, archived plans, or todo lists unless the active plan references it.
 - If the current task is blocked, diagnose it or report the blocker; do not switch to an unauthorized roadmap task.
 - On completion, follow the active plan's exact `on_complete` value.
+- Classify a material mid-project change before editing plan authority: use `task_adjustment`, `priority_branch`, or `roadmap_change` as defined by the project context system.
+- The main agent interprets user changes, maintains the plan within the user's authority, and owns integration for the current request. Subagents receive bounded task packets and may not broaden scope or select roadmap work.
 ```
 
 Do not add this section when the project has no planning-authority module.
@@ -175,4 +191,7 @@ Verify:
 - `on_complete` is explicit and machine-readable
 - deferred work has not been silently deleted or marked complete
 - roadmap checkboxes cannot be mistaken for current task authorization
+- the latest material requirement change has a canonical class and stable change ID
+- a roadmap change references the durable document or decision that owns it
+- root `AGENTS.md` limits subagents to explicitly delegated scope
 - project tests and plan-specific acceptance checks remain separate from context validation

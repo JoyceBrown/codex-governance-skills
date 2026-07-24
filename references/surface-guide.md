@@ -5,6 +5,8 @@ Use the smallest surface whose scope matches the information or behavior.
 | Surface | Purpose | Typical location | Create when | Do not use for |
 | --- | --- | --- | --- | --- |
 | Current prompt | One task's goal, context, constraints, and completion condition | Current chat | The requirement is temporary | Durable project facts |
+| Subagent task packet | Bounded objective, scope, acceptance criteria, and return contract | Delegation message; optional drafting template | Work is delegated to another agent | Plan authority, roadmap changes, or whole-project completion authority |
+| New-task handoff | Repository state, active authority, next action, and responsibility transfer | Handoff message; optional drafting template | Another Codex task will continue or take over | Ordinary subagent delegation |
 | Global `AGENTS.md` | Personal working preferences across repositories | `~/.codex/AGENTS.md` | The guidance belongs to one developer, not the project | Shared team policy |
 | `README.md` | Project overview, setup, and navigation | Repository root | Every user-facing project | Detailed agent policy |
 | `docs/` | Product, architecture, data, operations, and decisions | Repository | Detail exceeds the README | Codex runtime settings |
@@ -35,6 +37,8 @@ Create `.codex/config.toml` only for trusted repository-specific settings. Keep 
 ### Instruction overrides
 
 Codex loads at most one instruction file per directory and prefers `AGENTS.override.md` over `AGENTS.md`. Create an override only when replacing that level is intentional; use a nested `AGENTS.md` for additive local guidance.
+
+A new task discovers applicable repository instructions again but does not inherit the old transcript. A fork copies the conversation at the fork point, after which the branches diverge. A subagent receives durable repository rules but still needs an explicit bounded task packet containing the active objective, scope, exclusions, acceptance criteria, validation, and return contract. See `change-intake-and-agent-handoff.md`.
 
 ### Skills
 

@@ -19,6 +19,9 @@ Ask only for missing information that changes the result. Prefer repository evid
 | Current focus | Several plans or todo lists could appear active | What do you want Codex to finish first right now? |
 | Completion routing | Work should continue across plans or sessions | When that work is done, should Codex stop for review, return to a named task, or start another named task? |
 | Temporary exclusions | The user is reprioritizing work | Which areas should Codex leave alone for now? |
+| Requirement effect | A mid-project request may alter current work or durable direction | Is this only changing how the current task is done, or does it replace a long-term decision? |
+| Return behavior | A new request may be a temporary priority branch | After this is finished, should Codex return to the paused task or stop for your review? |
+| Responsibility transfer | Work may move to another task instead of a bounded subagent | Should the other task only help with one bounded part, or formally take over integration and reporting? |
 
 Do not ask about choices that can be deferred safely. Mark unresolved decisions in the relevant document instead.
 

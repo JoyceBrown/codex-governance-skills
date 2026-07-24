@@ -18,6 +18,9 @@ plan_id: FEATURE-01
 status: active
 authority: exclusive
 current_task_id: TASK-01
+latest_change_id: CHANGE-01
+latest_change_class: task_adjustment
+change_authority_reference: none
 on_complete: wait
 
 ## Allowed scope
@@ -37,6 +40,13 @@ Do not start other roadmap work.
 ## Validation
 
 Run the relevant test suite.
+"""
+
+AGENT_ROUTING = """# Instructions
+
+Use PLANS.md only. The roadmap and docs/work/current.md do not authorize work.
+Classify changes as task_adjustment, priority_branch, or roadmap_change.
+A subagent may not broaden scope or select roadmap work without explicit authority.
 """
 
 
@@ -66,10 +76,7 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
     def test_valid_planning_authority_module_passes(self) -> None:
         temporary, root = self.make_project()
         self.addCleanup(temporary.cleanup)
-        (root / "AGENTS.md").write_text(
-            "# Instructions\n\nUse PLANS.md only. The roadmap and docs/work/current.md do not authorize work.\n",
-            encoding="utf-8",
-        )
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
         (root / "PLANS.md").write_text(ACTIVE_PLAN, encoding="utf-8")
         (root / "docs" / "work").mkdir(parents=True)
         (root / "docs" / "roadmap.md").write_text(
@@ -178,6 +185,127 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
         warning_codes = self.codes(result, "warnings")
         self.assertIn("roadmap-authority-undeclared", warning_codes)
         self.assertIn("actionable-roadmap-checklist", warning_codes)
+
+    def test_priority_branch_requires_deferred_work_details(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: priority_branch",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        error_codes = self.codes(result, "errors")
+        self.assertIn("priority-branch-without-deferred-work", error_codes)
+        self.assertIn("incomplete-priority-branch-record", error_codes)
+
+    def test_valid_priority_branch_passes(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: priority_branch",
+        ).replace(
+            "## Milestones",
+            "## Deferred work\n\n| Item | Reason deferred | Impact | Resume condition |\n"
+            "| --- | --- | --- | --- |\n"
+            "| TASK-OLD | User changed priority | Delays login | After TASK-01 review |\n\n"
+            "## Milestones",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(set(), self.codes(result, "errors"))
+
+    def test_roadmap_change_requires_durable_authority_reference(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: roadmap_change",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn(
+            "roadmap-change-without-authority-reference",
+            self.codes(result, "errors"),
+        )
+
+    def test_roadmap_change_with_durable_reference_passes(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: roadmap_change",
+        ).replace(
+            "change_authority_reference: none",
+            "change_authority_reference: docs/product.md#scope",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+
+    def test_active_plan_requires_change_and_subagent_routing(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(
+            "# Instructions\n\nUse PLANS.md as the active plan.\n",
+            encoding="utf-8",
+        )
+        (root / "PLANS.md").write_text(ACTIVE_PLAN, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        error_codes = self.codes(result, "errors")
+        self.assertIn("missing-requirement-change-routing", error_codes)
+        self.assertIn("missing-subagent-authority-routing", error_codes)
+
+    def test_active_plan_requires_change_classification_metadata(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace("latest_change_id: CHANGE-01\n", "").replace(
+            "latest_change_class: task_adjustment\n", ""
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("incomplete-active-plan", self.codes(result, "errors"))
+
+    def test_invalid_change_class_fails(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: quick_fix",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn(
+            "invalid-requirement-change-class",
+            self.codes(result, "errors"),
+        )
 
 
 if __name__ == "__main__":

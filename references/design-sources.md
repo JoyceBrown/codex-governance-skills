@@ -4,7 +4,9 @@ This skill adopts concepts from public open-source projects without copying thei
 
 ## Official Codex foundation
 
-The surface names and discovery behavior follow the current official documentation for [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Skills](https://learn.chatgpt.com/docs/build-skills), [project configuration and hooks](https://learn.chatgpt.com/docs/config-file/config-advanced), [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules), and [custom agents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+The surface names and discovery behavior follow the current official documentation for [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Skills](https://learn.chatgpt.com/docs/build-skills), [project configuration and hooks](https://learn.chatgpt.com/docs/config-file/config-advanced), [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules), and [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+
+The handoff model follows the documented distinction between durable repository instructions and task-local conversation context: applicable `AGENTS.md` files are discovered for a run, a new task does not inherit an unrecorded prior transcript, a fork copies context only at its branch point, and a delegated subagent still needs an explicit task-local objective and scope. This Skill therefore does not claim that all active-task rules automatically follow an agent.
 
 ## Open-source synthesis
 
