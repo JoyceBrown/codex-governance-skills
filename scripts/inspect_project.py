@@ -235,6 +235,23 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         if path.startswith(".github/workflows/")
         or path in {".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile"}
     )
+    experience_signals = []
+    if len(docs) >= 8:
+        experience_signals.append("many-docs")
+    if len(planning_files) > 1:
+        experience_signals.append("competing-plans")
+    if len(agent_files) > 1:
+        experience_signals.append("nested-agent-rules")
+    if len(package_managers) > 1:
+        experience_signals.append("multiple-package-managers")
+    if len(manifests) > 1:
+        experience_signals.append("multiple-manifests")
+    if codex_files:
+        experience_signals.append("advanced-codex-surfaces")
+    if skill_files:
+        experience_signals.append("project-local-skills")
+    if ci_files:
+        experience_signals.append("ci-configured")
 
     top_level = sorted(path.name for path in root.iterdir()) if root.exists() else []
 
@@ -251,6 +268,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         "manifests": manifests[:100],
         "package_managers": package_managers,
         "commands": extract_commands(root, files),
+        "experience_signals": experience_signals,
         "context_artifacts": {
             "readme": "README.md" if "README.md" in rel_set else None,
             "agents": agent_files,

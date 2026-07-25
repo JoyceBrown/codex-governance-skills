@@ -1,6 +1,6 @@
 ---
 name: bootstrap-codex-project
-description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, classifying mid-project requirement changes, handing work to a new task or subagent, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
+description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, classifying mid-project requirement changes, handing work to a new task or subagent, learning from recurring project friction, reviewing or promoting reusable project lessons, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
 ---
 
 # Bootstrap Codex Project
@@ -40,6 +40,8 @@ Infer the mode without asking when the situation is clear:
 - **Audit or refresh**: The user asks to review, simplify, repair, or update existing context files.
 
 For an existing repository, resolve `<skill-dir>` to the directory containing this `SKILL.md`, then run `python "<skill-dir>/scripts/inspect_project.py" <project-root>` before proposing files. Treat its output as evidence, then read only the relevant files it identifies. Do not infer commands, frameworks, paths, or architecture from naming alone.
+
+After identifying the project type and concrete risk signals, read `references/experience-learning.md` when a private learning registry exists or the user asks the Skill to remember, learn, review experience, or improve itself. Query only locally accepted patterns that match the current project. Treat them as advisory until repository evidence confirms them.
 
 ## Run the workflow
 
@@ -99,6 +101,14 @@ When enabled, read `references/planning-authority.md` completely before proposin
 
 When the user adds or changes a requirement during ongoing work, or when work must continue in a new task, fork, or subagent, read `references/change-intake-and-agent-handoff.md` completely. Classify the change by its real effect, not by casual wording. Ask one plain-language question only when the answer changes durable project boundaries, what work should be restored later, or who has authority to alter the plan.
 
+Enable experience learning independently from the output profile:
+
+- `off`: do not capture or suggest experience candidates.
+- `ask`: point out a reusable lesson after real friction and ask before saving a sanitized candidate; use this default.
+- `auto_sanitized`: save structured, sanitized candidates after real failures or user corrections, but never accept or promote them automatically.
+
+Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
+
 ### 5. Present the artifact plan
 
 Before broad edits, show a compact plan with four groups:
@@ -128,6 +138,7 @@ Apply these ownership rules:
 - Put repository-wide working rules, verified commands, constraints, and completion checks in root `AGENTS.md`.
 - When planning authority is enabled, put the execution precedence and roadmap prohibition in root `AGENTS.md` so they load without invoking this Skill again.
 - When planning authority is enabled, put durable requirement-change routing and subagent authority limits in root `AGENTS.md`; keep the active classification, latest user decision, and task-local delegation details in `PLANS.md` or the delegation message.
+- When an accepted local experience changes required behavior for this project, write the verified result into the project's canonical owner. Never make project correctness depend on a private user registry or Codex Memory.
 - Add a nested `AGENTS.md` only when that subtree has materially different commands, constraints, ownership, or risk.
 - Do not create `PLANS.md`, `docs/roadmap.md`, or `docs/work/current.md` as an inseparable bundle. Create only the artifacts justified by the project, but make their authority explicit whenever more than one exists.
 
@@ -167,6 +178,9 @@ Then verify:
 - the latest material requirement change has one canonical class and updated only the existing or justified authority owners it actually affects
 - a new task can recover active work from repository artifacts, while a subagent receives an explicit bounded task packet
 - no subagent or task packet silently acquires roadmap, scope, or completion authority
+- every applied local experience matches current repository evidence and project scope
+- no unreviewed experience candidate, generated memory, private path, secret, or raw transcript became project guidance
+- every promoted experience has user approval, forward-test evidence, and a regression test
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
 - relevant project tests or checks pass when implementation files changed
@@ -200,6 +214,11 @@ Do not claim the project is fully configured when commands, deployment, security
 - Do not turn a roadmap into an executable checklist or silently choose work from it.
 - Do not assume a new task, fork, or subagent automatically knows the active objective, exclusions, acceptance criteria, or latest user decision.
 - Do not let a subagent reclassify requirements, change plan authority, broaden scope, or claim whole-project completion. A formal task takeover uses the new-task handoff contract instead of a subagent packet.
+- Do not treat Codex Memories as the source of required project or Skill behavior.
+- Do not let an unreviewed candidate influence another project.
+- Do not capture raw transcripts, source code, client identifiers, repository paths, credentials, personal data, or long logs in the experience registry.
+- Do not auto-edit this Skill, auto-commit, auto-push, or auto-publish an experience. Promotion requires explicit user authorization and normal Skill validation.
+- Do not grow the Skill for every correction. Keep project-specific lessons in the project, route conditional patterns to references, and use scripts or tests for mechanical failures.
 - Do not force planning IDs, roadmaps, checkpoints, or strict governance onto projects that do not need them.
 - Do not initialize Git, commit, push, deploy, or install packages unless the user requested that broader action.
 
@@ -208,6 +227,7 @@ Do not claim the project is fully configured when commands, deployment, security
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
 - Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
 - Read `references/change-intake-and-agent-handoff.md` when requirements change during work or when a new task, fork, or subagent must continue the work.
+- Read `references/experience-learning.md` when capturing, reviewing, applying, retiring, or promoting experience across projects.
 - Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.
 - Read `references/design-sources.md` only when maintaining this skill or explaining how its design relates to existing open-source approaches.

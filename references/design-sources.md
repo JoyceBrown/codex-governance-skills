@@ -4,9 +4,11 @@ This skill adopts concepts from public open-source projects without copying thei
 
 ## Official Codex foundation
 
-The surface names and discovery behavior follow the current official documentation for [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Skills](https://learn.chatgpt.com/docs/build-skills), [project configuration and hooks](https://learn.chatgpt.com/docs/config-file/config-advanced), [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules), and [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
+The surface names and discovery behavior follow the current official documentation for [AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md), [Skills](https://learn.chatgpt.com/docs/build-skills), [Memories](https://learn.chatgpt.com/docs/customization/memories), [project configuration and hooks](https://learn.chatgpt.com/docs/config-file/config-advanced), [Rules](https://learn.chatgpt.com/docs/agent-configuration/rules), and [subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents).
 
 The handoff model follows the documented distinction between durable repository instructions and task-local conversation context: applicable `AGENTS.md` files are discovered for a run, a new task does not inherit an unrecorded prior transcript, a fork copies context only at its branch point, and a delegated subagent still needs an explicit task-local objective and scope. This Skill therefore does not claim that all active-task rules automatically follow an agent.
+
+The learning model follows two official boundaries. First, required team guidance belongs in `AGENTS.md` or checked-in documentation, while Memories are a helpful recall layer rather than the only source for rules that must apply. Second, official Codex best practices recommend adding rules after repeated real mistakes and keeping `AGENTS.md` short and practical. This Skill therefore uses a private candidate registry, review gates, matching signals, and regression tests instead of treating generated memories or one correction as a universal rule.
 
 ## Open-source synthesis
 
@@ -31,4 +33,4 @@ The result is not an "AI configuration bundle." It is a semantic project context
 
 ## Internal design standard
 
-`skill-design-principles.md` is the maintenance standard distilled from the user discussion that produced this Skill. Its central rule is that the Skill's diagnostic ability should be comprehensive while its generated structure remains minimal and evidence-based. It also defines natural-language entry, progressive disclosure, evidence states, planning authority, validation-based completion, and safe degradation for cases the workflow cannot classify confidently.
+`skill-design-principles.md` is the maintenance standard distilled from the user discussion that produced this Skill. Its central rule is that the Skill's diagnostic ability should be comprehensive while its generated structure remains minimal and evidence-based. It also defines natural-language entry, progressive disclosure, evidence states, planning authority, validation-based completion, safe degradation, and evidence-gated learning from real project friction.

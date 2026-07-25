@@ -1,4 +1,4 @@
 interface:
   display_name: "Bootstrap Codex Project"
-  short_description: "Build adaptive Codex context and handoff rules"
-  default_prompt: "Use $bootstrap-codex-project to turn my project idea or repository into the smallest trustworthy Codex context system. Classify mid-project changes and preserve current-task authority across new tasks or subagents only when the project needs those controls."
+  short_description: "Build adaptive Codex context that improves from evidence"
+  default_prompt: "Use $bootstrap-codex-project to build or repair the smallest trustworthy Codex context system. Apply only reviewed experience that matches this project, and capture reusable lessons safely when real friction appears."

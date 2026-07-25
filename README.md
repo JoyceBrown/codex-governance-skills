@@ -2,7 +2,7 @@
 
 把一个项目想法或已有仓库，整理成最小、准确、可信、可维护、适合 Codex 长期工作的项目上下文系统。
 
-这个仓库包含一个可安装的 Codex Skill。它不会把项目变成臃肿的“AI 配置包”，也不会为了看起来完整而给每个文件夹生成 `AGENTS.md`。它解决六个问题：
+这个仓库包含一个可安装的 Codex Skill。它不会把项目变成臃肿的“AI 配置包”，也不会为了看起来完整而给每个文件夹生成 `AGENTS.md`。它解决七个问题：
 
 1. 这个项目到底要解决什么问题？
 2. 哪些内容已经验证，哪些只是决定、计划、假设或待确认？
@@ -10,6 +10,7 @@
 4. 当前任务应该读取哪些文件，而不是把整个仓库塞入上下文？
 5. 项目中途新增要求，到底是当前任务调整、临时插队，还是改变长期方向？
 6. 开新任务或子代理后，哪些规则会跟随，哪些上下文必须明确交接？
+7. 做过更多项目后，怎样吸收真实经验，同时避免把单个项目的特殊情况污染所有新项目？
 
 ## 为什么需要它
 
@@ -45,6 +46,95 @@ Codex 约束     -> 根或必要的嵌套 AGENTS.md
 | `Open` | 尚未解决的问题或相互冲突的证据 |
 
 文件名、目录名、依赖名称和模型输出不能自动升级为 `Verified`。
+
+## 怎样让 Skill 越用越聪明
+
+真正可靠的“学习”不是让模型随意记住聊天，也不是每次被用户纠正后就往 `SKILL.md` 追加一句规则。这样做很快会产生互相冲突、只适合某个项目、无法验证的提示词垃圾。
+
+本 Skill 使用三层学习结构：
+
+| 层级 | 负责什么 | 能否直接约束项目 |
+| --- | --- | --- |
+| Codex Memories | 帮助回忆用户偏好、近期工作和重复背景 | 不能作为必须执行规则的唯一来源 |
+| 私有经验候选库 | 保存脱敏、结构化、可审查的问题与改进方案 | 只有用户批准且与当前项目匹配时才能作为建议 |
+| 版本化 Skill | 保存已经泛化、验证并有回归测试的通用能力 | 可以按 Skill 路由规则稳定执行 |
+
+项目自身的硬规则仍然必须写入项目的 `AGENTS.md`、docs、代码、测试或活动计划。即使个人经验库丢失，项目也不能因此失去关键约束。
+
+### 一条经验如何成长
+
+```text
+真实问题或用户纠正
+    -> 脱敏候选 candidate
+    -> 用户审查 accepted_local / rejected
+    -> 在匹配的新项目中小范围验证
+    -> 跨项目重复或严重问题复现
+    -> 前向测试 + 反例 + 回归测试
+    -> 用户授权后更新 Skill
+    -> promoted
+```
+
+候选经验默认不会影响其他项目。只有 `accepted_local` 状态的经验，才会在项目类型和风险信号匹配时作为建议出现。已经进入 Skill 的 `promoted` 经验不会再次注入上下文，避免重复。
+
+### 为什么不能完全自动升级
+
+不同项目经常给出相反答案：
+
+- 桌面本地工具可能应该使用 SQLite，云服务可能应该使用 PostgreSQL；
+- 个人原型可以简化权限系统，企业系统不可以；
+- 某个项目需要严格计划权限，小项目可能只需要 README 和一个 `AGENTS.md`；
+- 用户的一次个人偏好，不等于所有用户和所有项目的最佳实践。
+
+因此 Skill 可以自动发现、脱敏、去重和累计证据，但不能自动批准、修改自己、提交或推送。最后的泛化判断和公开发布必须可审查。
+
+### 私有经验存放位置
+
+默认位置：
+
+```text
+%CODEX_HOME%\learning\bootstrap-codex-project\
+```
+
+未设置 `CODEX_HOME` 时使用个人 Codex 目录。这里保存的是本机私有生成状态，不会提交到公开仓库，也不保存原始聊天、源代码、客户名称、仓库路径、密钥或长日志。
+
+查看当前记录模式：
+
+```text
+python "<skill-dir>\scripts\experience_registry.py" config
+```
+
+三种模式：
+
+| 模式 | 行为 |
+| --- | --- |
+| `off` | 不发现、不保存经验候选 |
+| `ask` | 发现真实可复用问题后先询问用户；默认模式 |
+| `auto_sanitized` | 调用本 Skill 且识别到真实摩擦时自动保存脱敏候选，但仍不能自动批准或升级 Skill |
+
+切换为自动保存脱敏候选：
+
+```text
+python "<skill-dir>\scripts\experience_registry.py" configure --capture-mode auto_sanitized
+```
+
+通常由 Skill 替用户操作登记工具。需要人工检查时，可以使用：
+
+```text
+# 查看未审查候选
+python "<skill-dir>\scripts\experience_registry.py" list --status candidate
+
+# 批准一条本地经验
+python "<skill-dir>\scripts\experience_registry.py" review EXP-20260726-1234abcd --decision accept --reason "已确认适用于具有重复文档权威冲突的项目"
+
+# 检查它是否具备进入 Skill 的基础证据
+python "<skill-dir>\scripts\experience_registry.py" assess EXP-20260726-1234abcd
+```
+
+`assess` 只检查机械门槛，不会修改 Skill，也不会替用户批准发布。
+
+详细规则见 [`references/experience-learning.md`](references/experience-learning.md)。
+
+经验查询和采集发生在调用本 Skill 的任务中；它不是后台监控器，也不会观察未调用该 Skill 的所有开发会话。
 
 ## 三种模式
 
@@ -288,6 +378,44 @@ AGENTS.md
 
 用户不需要自己设计 `plan_id`、权限标记或文件结构。Skill 会先判断项目是否真的需要计划权限模块；如果不需要，就不会生成整套计划文件。
 
+### 让 Skill 记住一次教训
+
+普通用户可以直接说：
+
+```text
+使用 $bootstrap-codex-project。
+
+复盘这次项目整理过程。把真正可复用的问题整理成脱敏经验候选，
+项目特有要求留在当前项目，不要直接修改 Skill。
+```
+
+Skill 会提炼“发生了什么、为什么错、以后什么情况下应该怎样做”，并根据当前记录模式询问后保存，或自动保存为候选。它不会复制整段对话。
+
+### 审查已经积累的经验
+
+```text
+使用 $bootstrap-codex-project。
+
+审查本地积累的经验候选：
+- 合并重复项
+- 区分当前项目、同类项目和跨项目经验
+- 拒绝没有证据或过度泛化的内容
+- 告诉我哪些可以批准为本地经验
+```
+
+### 把成熟经验升级到 Skill
+
+```text
+使用 $bootstrap-codex-project。
+
+检查本地已批准经验中，哪些已经在多个独立项目出现，
+或属于已复现的严重问题。只对通过泛化、反例、前向测试和
+回归测试的经验更新 Skill。先说明修改位置，得到我的授权后
+再同步安装副本和发布 GitHub。
+```
+
+适合所有运行都需要的核心判断进入 `SKILL.md`；只适合某类项目的条件经验进入 `references/`；机械识别问题进入脚本和测试；只适合一个项目的经验永远留在该项目。
+
 最简调用：
 
 ```text
@@ -352,12 +480,14 @@ expected_return
 3. 从代码、manifest、测试和 CI 中提取事实，从用户或权威文档中提取意图与政策。
 4. 只询问会改变架构、生成文件或安全边界的问题，每次不超过三个。
 5. 选择 Minimal、Standard 或 Advanced，并独立判断是否启用计划权限模块。
-6. 展示 Create、Update、Keep、Skip 四组文件计划。
-7. 使用模板生成语义化文档并保留准确的人类内容。
-8. 运行验证器，检查权威归属、计划权限、活动计划数量和完成去向。
-9. 中途需求发生变化时，判断它影响当前任务、临时优先级还是长期方向，并更新对应的权威文件。
-10. 需要跨任务或委派时，建立可恢复的交接状态和有限任务包。
-11. 修复错误并解释保留的警告。
+6. 查询与当前项目类型和风险信号匹配的已批准本地经验；候选经验不参与决策。
+7. 展示 Create、Update、Keep、Skip 四组文件计划。
+8. 使用模板生成语义化文档并保留准确的人类内容。
+9. 运行验证器，检查权威归属、计划权限、活动计划数量和完成去向。
+10. 中途需求发生变化时，判断它影响当前任务、临时优先级还是长期方向，并更新对应的权威文件。
+11. 需要跨任务或委派时，建立可恢复的交接状态和有限任务包。
+12. 真实摩擦产生可复用教训时，按记录模式形成脱敏候选。
+13. 修复错误并解释保留的警告。
 
 它不会自动：
 
@@ -366,6 +496,9 @@ expected_return
 - 为每个目录建立 Agent 文件；
 - 生成没有实际用途的 MCP、Hooks、Rules、Plugins 或 Automations；
 - 保存密码、Token 或其他凭据；
+- 把 Codex Memories、未审查候选或另一个项目的特殊规则当成当前项目事实；
+- 保存原始聊天、源代码、客户信息、个人路径或长日志到经验库；
+- 因为一条候选经验自动修改 Skill、提交或推送；
 - 初始化 Git、提交、推送、部署或安装依赖，除非用户明确要求。
 
 ## 检查器和验证器
@@ -404,6 +537,14 @@ python "<skill-dir>\scripts\validate_project_context.py" <project-root> --profil
 
 验证通过不等于业务代码正确，也不能替代项目测试。
 
+经验库工具：
+
+```text
+python "<skill-dir>\scripts\experience_registry.py" --help
+```
+
+它负责脱敏、去重、独立项目计数、适用范围过滤、人工审查状态和晋升门槛检查。晋升门槛检查只是证据提示，不能代替用户授权和真实测试。
+
 ## 设计来源
 
 本 Skill 的维护首先遵循 [`references/skill-design-principles.md`](references/skill-design-principles.md)：全面的是 Skill 的判断能力，不是它给每个项目生成的文件数量。用户入口保持白话和简单，复杂判断、证据分级、计划权限与安全降级由 Skill 内部完成。
@@ -417,7 +558,7 @@ python "<skill-dir>\scripts\validate_project_context.py" <project-root> --profil
 - Project Bootstrapper：把结构、文档、测试和质量工具视为系统；
 - TechWolf AI-First Toolkit：只问真正影响决策的问题。
 
-Codex 表面名称和加载行为按官方文档校对，详见 [references/design-sources.md](references/design-sources.md)。
+Codex 表面名称、加载行为和 Memories 边界按官方文档校对，详见 [references/design-sources.md](references/design-sources.md)。
 
 ## 仓库内容
 
