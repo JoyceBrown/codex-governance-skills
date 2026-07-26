@@ -4,6 +4,8 @@ Use this only when another Codex task will assist, continue, or formally take ov
 
 responsibility: {{ASSIST_CONTINUE_OR_TAKE_OVER}}
 integration_owner: {{ORIGINATING_TASK_NEW_TASK_OR_USER}}
+target_task: {{EXISTING_OR_NEW_TASK_ID_AND_NAME}}
+target_resolution: {{HOW_PROJECT_PATH_NAME_AND_READABILITY_WERE_CONFIRMED}}
 repository_root: {{REPOSITORY_ROOT}}
 worktree: {{WORKTREE_PATH_OR_SAME_AS_REPOSITORY_ROOT}}
 branch: {{BRANCH_OR_NONE}}
@@ -13,6 +15,8 @@ active_plan: {{PLAN_LINK_OR_NONE}}
 current_task_id: {{TASK_ID_OR_NONE}}
 latest_change_id: {{CHANGE_ID_OR_NONE}}
 latest_change_class: {{CLASS_OR_NONE}}
+verified_capabilities: {{WORKSPACE_TOOLS_DEPENDENCIES_AND_CURRENT_LIMITS}}
+delivery_state: {{ARTIFACT_REPOSITORY_PUBLICATION_OR_NONE}}
 
 ## Objective
 

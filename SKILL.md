@@ -58,6 +58,9 @@ Normalize the available information into:
 - evidence state for material claims
 - quality, safety, and completion requirements
 - current focus and any explicitly deferred work
+- priority basis, bundled completion boundary, and exact continuation behavior
+- user-visible acceptance and delivery evidence when the project has those surfaces
+- consequential domain terms, repeated failed attempts, and verified capability blockers
 - whether a roadmap, active plan, or cross-session checkpoint already exists
 - unresolved decisions
 
@@ -101,6 +104,14 @@ When enabled, read `references/planning-authority.md` completely before proposin
 
 When the user adds or changes a requirement during ongoing work, or when work must continue in a new task, fork, or subagent, read `references/change-intake-and-agent-handoff.md` completely. Classify the change by its real effect, not by casual wording. Ask one plain-language question only when the answer changes durable project boundaries, what work should be restored later, or who has authority to alter the plan.
 
+When long-running software work shows bare continuation prompts, bundled
+finish-before-stop requirements, repeated failed attempts, user-visible work
+competing with internal cleanup, release artifacts, consequential terminology,
+or effective-state and blast-radius risk, read
+`references/execution-discipline.md` completely. Apply only the rules whose
+observable signals match; they refine execution inside existing authority and
+never broaden scope or side-effect permission.
+
 Enable experience learning independently from the output profile:
 
 - `off`: do not capture or suggest experience candidates.
@@ -138,6 +149,10 @@ Apply these ownership rules:
 - Put repository-wide working rules, verified commands, constraints, and completion checks in root `AGENTS.md`.
 - When planning authority is enabled, put the execution precedence and roadmap prohibition in root `AGENTS.md` so they load without invoking this Skill again.
 - When planning authority is enabled, put durable requirement-change routing and subagent authority limits in root `AGENTS.md`; keep the active classification, latest user decision, and task-local delegation details in `PLANS.md` or the delegation message.
+- When execution-discipline signals exist, put continuation, bundled
+  completion, priority basis, and delivery evidence in `PLANS.md`; put failed
+  attempts, changed strategy, verified blockers, artifact identity, and
+  repository state in `docs/work/current.md`.
 - When an accepted local experience changes required behavior for this project, write the verified result into the project's canonical owner. Never make project correctness depend on a private user registry or Codex Memory.
 - Add a nested `AGENTS.md` only when that subtree has materially different commands, constraints, ownership, or risk.
 - Do not create `PLANS.md`, `docs/roadmap.md`, or `docs/work/current.md` as an inseparable bundle. Create only the artifacts justified by the project, but make their authority explicit whenever more than one exists.
@@ -173,16 +188,20 @@ Then verify:
 - no `{{PLACEHOLDER}}` remains
 - no concept has conflicting definitions across files
 - no roadmap or checkpoint can be mistaken for the active execution plan
+- versioned or non-canonical roadmap, plan, current-work, and handoff files have been inventoried instead of missed by exact-filename checks
 - at most one plan is marked active with exclusive execution authority
 - active-plan metadata, current task, exclusions, validation, and completion behavior are explicit
+- bare continuation resolves to validate-then-advance, bundled work cannot be partially closed, and any delivery contract names its observable evidence
 - the latest material requirement change has one canonical class and updated only the existing or justified authority owners it actually affects
 - a new task can recover active work from repository artifacts, while a subagent receives an explicit bounded task packet
+- a named handoff target was resolved before creating another task, and any claimed capability blocker has current evidence
 - no subagent or task packet silently acquires roadmap, scope, or completion authority
 - every applied local experience matches current repository evidence and project scope
 - no unreviewed experience candidate, generated memory, private path, secret, or raw transcript became project guidance
 - every promoted experience has user approval, forward-test evidence, and a regression test
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
+- durable project files do not hard-code the current repository's host-local absolute path
 - relevant project tests or checks pass when implementation files changed
 
 Treat validator warnings as review prompts, not automatic failures. Fix errors and explain any intentionally retained warning.
@@ -227,6 +246,9 @@ Do not claim the project is fully configured when commands, deployment, security
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
 - Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
 - Read `references/change-intake-and-agent-handoff.md` when requirements change during work or when a new task, fork, or subagent must continue the work.
+- Read `references/execution-discipline.md` for long-running continuation,
+  atomic completion, priority, blocker, retry, delivery, terminology,
+  effective-state, or blast-radius signals.
 - Read `references/experience-learning.md` when capturing, reviewing, applying, retiring, or promoting experience across projects.
 - Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.

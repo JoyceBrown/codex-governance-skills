@@ -18,6 +18,10 @@ plan_id: FEATURE-01
 status: active
 authority: exclusive
 current_task_id: TASK-01
+continuation_policy: validate_then_advance
+completion_policy: all_required_items
+priority_basis: The user-visible feature is currently broken.
+delivery_contract: none
 latest_change_id: CHANGE-01
 latest_change_class: task_adjustment
 change_authority_reference: none
@@ -306,6 +310,96 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
             "invalid-requirement-change-class",
             self.codes(result, "errors"),
         )
+
+    def test_versioned_planning_artifacts_are_not_missed(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "ROADMAP_3.0_TO_4.0.md").write_text(
+            "# Historical roadmap\n",
+            encoding="utf-8",
+        )
+        (root / "DEVELOPMENT_HANDOFF_3.6.md").write_text(
+            "# Historical handoff\n",
+            encoding="utf-8",
+        )
+        (root / "explanation.md").write_text(
+            "# Not planning\n",
+            encoding="utf-8",
+        )
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+        warnings = result["warnings"]
+        self.assertIsInstance(warnings, list)
+        warning_paths = {
+            str(entry["path"])
+            for entry in warnings
+            if entry["code"] == "noncanonical-planning-artifact"
+        }
+        self.assertEqual(
+            {"DEVELOPMENT_HANDOFF_3.6.md", "ROADMAP_3.0_TO_4.0.md"},
+            warning_paths,
+        )
+
+    def test_active_plan_warns_when_execution_discipline_is_missing(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN
+        for line in (
+            "continuation_policy: validate_then_advance\n",
+            "completion_policy: all_required_items\n",
+            "priority_basis: The user-visible feature is currently broken.\n",
+            "delivery_contract: none\n",
+        ):
+            plan = plan.replace(line, "")
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+        self.assertIn(
+            "incomplete-execution-discipline",
+            self.codes(result, "warnings"),
+        )
+
+    def test_invalid_execution_policies_fail(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "continuation_policy: validate_then_advance",
+            "continuation_policy: repeat_last_action",
+        ).replace(
+            "completion_policy: all_required_items",
+            "completion_policy: partial_is_enough",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        error_codes = self.codes(result, "errors")
+        self.assertIn("invalid-continuation-policy", error_codes)
+        self.assertIn("invalid-completion-policy", error_codes)
+
+    def test_current_repository_absolute_path_warns(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "docs" / "work").mkdir(parents=True)
+        (root / "docs" / "work" / "current.md").write_text(
+            "# Current Work\n\n"
+            "record_kind: checkpoint\n"
+            "execution_authority: none\n"
+            f"workspace: {root.as_posix()}\n",
+            encoding="utf-8",
+        )
+
+        result = validate(root, "minimal")
+
+        warning_codes = self.codes(result, "warnings")
+        self.assertIn("repository-absolute-path", warning_codes)
 
 
 if __name__ == "__main__":

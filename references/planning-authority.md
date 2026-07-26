@@ -9,6 +9,7 @@ Use this module only when a project has long-running work, competing plans, cros
 - [Authority model](#authority-model)
 - [Artifact ownership](#artifact-ownership)
 - [Active plan contract](#active-plan-contract)
+- [Continuation, completion, and delivery](#continuation-completion-and-delivery)
 - [Reprioritization](#reprioritization)
 - [Mid-project requirement changes](#mid-project-requirement-changes)
 - [Existing repository migration](#existing-repository-migration)
@@ -87,6 +88,10 @@ plan_id
 status: active
 authority: exclusive
 current_task_id
+continuation_policy: validate_then_advance
+completion_policy: all_required_items
+priority_basis
+delivery_contract
 latest_change_id
 latest_change_class
 change_authority_reference
@@ -106,6 +111,12 @@ It must also state:
 - validation evidence gathered so far
 - decisions that changed the plan
 
+`priority_basis` states why the current task is the highest-value authorized
+work. `delivery_contract` is `none` when no artifact or external state belongs
+to the objective; otherwise it names the evidence required for delivery
+closure. Do not interpret it as authority to commit, push, publish, deploy, or
+mutate an external system.
+
 Allowed `on_complete` forms:
 
 ```text
@@ -115,6 +126,34 @@ activate:<plan-id>
 ```
 
 Avoid ambiguous values such as `continue`, `return to the plan`, or `do the next task`.
+
+## Continuation, completion, and delivery
+
+For an active long-running plan, use
+`continuation_policy: validate_then_advance`. A bare "continue" means:
+
+1. validate the current task against all acceptance criteria;
+2. finish the highest-value missing criterion when incomplete;
+3. otherwise complete the task and advance to the next authorized pending
+   milestone; and
+4. follow `on_complete` only after the plan's completion boundary is met.
+
+Use `completion_policy: all_required_items`. When the user explicitly bundles
+several requirements or names a finish-before-stop boundary, treat the bundle
+as one completion unit. Partial results are progress, not completion.
+
+Record the user-visible outcome in the priority basis. Internal cleanup may
+lead only when evidence shows it is a prerequisite or a higher safety,
+architecture, or data boundary requires it.
+
+When delivery produces an artifact or external state, define the report
+contract in advance: relevant version, artifact identity or location,
+validation, known limits, working-tree state, commit/push/publication state,
+and recovery evidence. Reporting a state does not authorize changing it.
+
+Read `execution-discipline.md` for retry, blocker, terminology,
+effective-state, and blast-radius rules. These rules never authorize work
+outside the active plan.
 
 ## Reprioritization
 
@@ -173,6 +212,16 @@ Adapt this contract to the repository language and paths:
 - Do not select work from README files, roadmaps, archived plans, or todo lists unless the active plan references it.
 - If the current task is blocked, diagnose it or report the blocker; do not switch to an unauthorized roadmap task.
 - On completion, follow the active plan's exact `on_complete` value.
+- Interpret a bare continue by validating the current task, finishing missing
+  acceptance criteria, and then advancing only to the next authorized
+  milestone.
+- Treat explicitly bundled requirements as one completion unit; partial
+  progress is not completion.
+- Do not repeat a failed approach without new evidence or a changed strategy,
+  and verify current capabilities before declaring a blocker.
+- When the plan has a delivery contract, report its artifact, validation, and
+  repository or external-state evidence without assuming authority to mutate
+  that state.
 - Classify a material mid-project change before editing plan authority: use `task_adjustment`, `priority_branch`, or `roadmap_change` as defined by the project context system.
 - The main agent interprets user changes, maintains the plan within the user's authority, and owns integration for the current request. Subagents receive bounded task packets and may not broaden scope or select roadmap work.
 ```
@@ -189,6 +238,11 @@ Verify:
 - roadmap and checkpoint files explicitly have no execution authority
 - root `AGENTS.md` routes execution to the active plan
 - `on_complete` is explicit and machine-readable
+- continuation and completion policies are explicit and use
+  `validate_then_advance` and `all_required_items`
+- priority basis names the user outcome or demonstrated prerequisite
+- delivery contract is explicit, including `none` when no artifact or external
+  state belongs to the objective
 - deferred work has not been silently deleted or marked complete
 - roadmap checkboxes cannot be mistaken for current task authorization
 - the latest material requirement change has a canonical class and stable change ID

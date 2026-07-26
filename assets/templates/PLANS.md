@@ -4,6 +4,10 @@ plan_id: {{PLAN_ID}}
 status: active
 authority: exclusive
 current_task_id: {{CURRENT_TASK_ID}}
+continuation_policy: validate_then_advance
+completion_policy: all_required_items
+priority_basis: {{USER_OUTCOME_OR_VERIFIED_PREREQUISITE}}
+delivery_contract: {{NONE_OR_REQUIRED_ARTIFACT_AND_REPOSITORY_EVIDENCE}}
 roadmap_reference: {{ROADMAP_MILESTONE_OR_NONE}}
 latest_change_id: {{CHANGE_ID}}
 latest_change_class: {{TASK_ADJUSTMENT_PRIORITY_BRANCH_OR_ROADMAP_CHANGE}}
@@ -16,6 +20,16 @@ Use this plan only for work that spans multiple modules, has meaningful risk, mu
 ## Objective
 
 {{ONE_MEASURABLE_OUTCOME}}
+
+## Priority and completion contract
+
+{{WHY_THIS_IS_THE_HIGHEST_VALUE_AUTHORIZED_WORK}}
+
+{{BUNDLED_REQUIREMENTS_OR_NAMED_FINISH_BOUNDARY_THAT_MUST_COMPLETE_AS_ONE_UNIT}}
+
+A bare continuation request validates the current task first, finishes missing
+acceptance criteria, and otherwise advances only to the next authorized
+milestone. Partial completion of a required bundle is progress, not completion.
 
 ## Authoritative context
 
@@ -54,6 +68,10 @@ Use only `pending`, `in_progress`, `blocked`, or `completed` for task status. Ke
 ## Validation evidence
 
 {{RESULTS_EXIT_CODES_SCREENSHOTS_DIFFS_OR_OTHER_EVIDENCE}}
+
+## Delivery state
+
+{{ARTIFACT_VERSION_PATH_DIGEST_VALIDATION_WORKTREE_COMMIT_PUSH_DEPLOYMENT_AND_KNOWN_LIMITS_OR_NONE}}
 
 ## Decision log
 

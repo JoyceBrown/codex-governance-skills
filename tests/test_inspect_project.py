@@ -54,6 +54,42 @@ class ProjectInspectionTests(unittest.TestCase):
             set(result["experience_signals"]),
         )
 
+    def test_versioned_plans_roadmaps_and_handoffs_are_inventoried(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in (
+                "ROADMAP_3.0_TO_4.0.md",
+                "PRODUCT_RECOVERY_PLAN_2026.md",
+                "DEVELOPMENT_HANDOFF_3.6.md",
+                "CURRENT_MAINLINE_1_TO_2.md",
+            ):
+                (root / name).write_text(f"# {name}\n", encoding="utf-8")
+            (root / "explanation.md").write_text(
+                "# Not a plan\n",
+                encoding="utf-8",
+            )
+
+            result = inspect(root, 100)
+
+        details = {
+            item["path"]: item["kind"]
+            for item in result["context_artifacts"]["planning_details"]
+        }
+        self.assertEqual(
+            {
+                "CURRENT_MAINLINE_1_TO_2.md": "current",
+                "DEVELOPMENT_HANDOFF_3.6.md": "handoff",
+                "PRODUCT_RECOVERY_PLAN_2026.md": "plan",
+                "ROADMAP_3.0_TO_4.0.md": "roadmap",
+            },
+            details,
+        )
+        self.assertIn("competing-plans", result["experience_signals"])
+        self.assertNotIn(
+            "explanation.md",
+            result["context_artifacts"]["planning"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

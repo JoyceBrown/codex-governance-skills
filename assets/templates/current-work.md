@@ -23,6 +23,15 @@ This file records progress and handoff state. It does not authorize new work.
 
 {{FAILURES_BLOCKERS_AND_ATTEMPTS}}
 
+## Attempts and strategy changes
+
+| Attempt or hypothesis | Observed outcome | New evidence or changed condition | Next strategy |
+| --- | --- | --- | --- |
+| {{METHOD}} | {{RESULT}} | {{WHAT_CHANGED_OR_NONE}} | {{DO_NOT_REPEAT_UNCHANGED_APPROACH}} |
+
+Before declaring a capability blocker, record the current workspace/tool probe
+and distinguish an unavailable capability from one failed invocation.
+
 ## Decisions and assumptions
 
 {{NEW_DECISIONS_AND_REVERSIBLE_ASSUMPTIONS}}
@@ -30,6 +39,10 @@ This file records progress and handoff state. It does not authorize new work.
 ## Exact next action
 
 {{NEXT_ACTION_WITHIN_THE_ACTIVE_PLAN}}
+
+## Delivery state
+
+{{ARTIFACT_IDENTITY_VALIDATION_WORKTREE_COMMIT_PUSH_PUBLICATION_DEPLOYMENT_AND_KNOWN_LIMITS_OR_NONE}}
 
 ## Active delegations and returned evidence
 

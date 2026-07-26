@@ -26,6 +26,8 @@ Ask one question when any of these remains ambiguous:
 - whether the request replaces a durable product or architecture decision
 - whether the new work belongs inside the current objective or becomes the new priority
 - whether the user wants an ordinary bounded subagent assignment or a formal new-task takeover with responsibility transfer
+- whether a consequential domain term has a project-specific meaning that
+  changes architecture, configuration, data, safety, or acceptance
 
 Prefer plain language:
 
@@ -34,6 +36,11 @@ Prefer plain language:
 - "Should this be part of the current task, or should it become the new thing Codex finishes first?"
 
 For reversible local ambiguity, state a low-risk assumption and continue. Ask instead of assuming when the choice affects architecture, safety, data compatibility, external actions, destructive behavior, or restoration of paused work.
+
+When terminology changes the result, derive its meaning from authoritative
+project evidence or ask one plain-language question, then record the accepted
+meaning in the glossary or owning domain document. Do not ask about harmless
+wording differences.
 
 ## Record the change
 
@@ -67,12 +74,47 @@ Use this recovery order in a new task:
 
 Do not claim that every rule follows automatically. Applicable `AGENTS.md` guidance is durable and automatically discovered only when the task is opened in the correct repository, worktree, and working directory. A closer `AGENTS.md` or `AGENTS.override.md` may change the effective rules. The old transcript and unrecorded decisions are not inherited.
 
+## Resolve the destination before task creation
+
+When the user refers to a named new task, existing task, project task, or
+handoff destination, resolve it before creating anything:
+
+1. identify the intended project and environment;
+2. inspect existing tasks when the wording may refer to one already created;
+3. match the explicit name, project, path, and responsibility;
+4. create a task only when the user requested creation and no intended
+   existing destination matches; and
+5. confirm that the created or selected task is readable before sending the
+   formal handoff or reporting success.
+
+If creation returns an identifier that is not yet readable, reconcile that
+state before creating a fallback. Never create two active destinations for the
+same takeover merely because the first confirmation failed.
+
+## Verify capability blockers
+
+Before telling the user that a new or resumed task lacks a terminal, editor,
+repository, version-control tool, dependency, permission, or runtime
+capability, inspect the current workspace and callable tools and perform a safe
+discovery probe. Distinguish:
+
+- a genuinely unavailable capability;
+- one failed invocation;
+- stale conversation or handoff context;
+- a missing dependency that may or may not be installable within authority;
+- an approval or side-effect boundary; and
+- an external or environment failure.
+
+Record concrete evidence and the smallest required user or external action.
+Capability verification does not grant new permission.
+
 ## Formal handoff to a new task
 
 When a new Codex task will formally continue or take over the work, do not rely on repository discovery alone. Provide a short handoff message and ensure durable state is current. Include:
 
 ```text
 repository_root and worktree
+target task identity and how it was resolved
 branch and base revision
 working-tree state and user changes that must be preserved
 active plan and current task ID
@@ -80,6 +122,8 @@ latest user decision and requirement-change class
 current objective and observable acceptance criteria
 authoritative files and excluded scope
 exact next action and validation still required
+verified capabilities, attempted failures, and changed strategy
+artifact, repository, and delivery state when relevant
 external and destructive side-effects policy
 responsibility: assist, continue, or take over
 integration and final-report owner

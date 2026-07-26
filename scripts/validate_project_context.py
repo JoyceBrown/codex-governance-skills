@@ -76,7 +76,7 @@ VAGUE_AGENT_PATTERNS = {
     "Chinese impossible perfection": re.compile(r"(?:不要|不能|永远不要)犯错"),
 }
 PLAN_FIELD_RE = re.compile(
-    r"^\s*(plan_id|status|authority|current_task_id|latest_change_id|latest_change_class|change_authority_reference|delegated_execution|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
+    r"^\s*(plan_id|status|authority|current_task_id|continuation_policy|completion_policy|priority_basis|delivery_contract|latest_change_id|latest_change_class|change_authority_reference|delegated_execution|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 ROADMAP_CHECKBOX_RE = re.compile(r"^\s*[-*+]\s+\[\s*\]", re.MULTILINE)
@@ -86,6 +86,8 @@ ALLOWED_CHANGE_CLASSES = {"task_adjustment", "priority_branch", "roadmap_change"
 ON_COMPLETE_RE = re.compile(
     r"^(?:wait|resume:[A-Za-z0-9._-]+|activate:[A-Za-z0-9._-]+)$"
 )
+ALLOWED_CONTINUATION_POLICIES = {"validate_then_advance"}
+ALLOWED_COMPLETION_POLICIES = {"all_required_items"}
 
 PROFILE_REQUIRED = {
     "minimal": ["README.md", "AGENTS.md"],
@@ -106,6 +108,27 @@ PROFILE_REQUIRED = {
 }
 
 
+def planning_artifact_kind(path: str) -> str | None:
+    """Classify exact and versioned planning filenames without substring traps."""
+    stem = Path(path).stem.lower()
+    tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", stem)
+        if token
+    }
+    if "roadmap" in tokens:
+        return "roadmap"
+    if "handoff" in tokens:
+        return "handoff"
+    if tokens & {"plan", "planning", "plans"}:
+        return "plan"
+    if tokens & {"task", "tasks", "todo", "todos"}:
+        return "tasks"
+    if "current" in tokens:
+        return "current"
+    return None
+
+
 def markdown_files(root: Path) -> list[Path]:
     results: list[Path] = []
     for current, dirs, names in os.walk(root):
@@ -119,6 +142,7 @@ def markdown_files(root: Path) -> list[Path]:
                 rel in {"README.md", "PLANS.md"}
                 or rel.startswith("docs/")
                 or name in {"AGENTS.md", "AGENTS.override.md"}
+                or planning_artifact_kind(name) is not None
             ):
                 results.append(path)
     return sorted(results)
@@ -251,6 +275,7 @@ def validate_planning_authority(
     active_plans: list[str] = []
     roadmap_paths: list[str] = []
     checkpoint_paths: list[str] = []
+    noncanonical_planning_paths: list[str] = []
     undeclared_roadmap_authority: list[str] = []
     undeclared_checkpoint_authority: list[str] = []
 
@@ -263,19 +288,41 @@ def validate_planning_authority(
 
         fields = planning_fields(text)
         name = path.name.lower()
+        kind = planning_artifact_kind(name)
         is_plan = name in {"plan.md", "plans.md"} or "plan_id" in fields
-        is_roadmap = name == "roadmap.md"
+        is_canonical_roadmap = rel == "docs/roadmap.md"
+        is_roadmap = is_canonical_roadmap or kind == "roadmap"
         is_checkpoint = rel == "docs/work/current.md" or fields.get("record_kind", "").lower() == "checkpoint"
+        is_noncanonical_planning = (
+            kind is not None
+            and not is_plan
+            and not is_checkpoint
+            and not is_canonical_roadmap
+        )
 
-        if not (is_plan or is_roadmap or is_checkpoint):
+        if not (is_plan or is_roadmap or is_checkpoint or is_noncanonical_planning):
             continue
         planning_records.append((path, text, fields))
+
+        if is_noncanonical_planning:
+            noncanonical_planning_paths.append(rel)
+            warnings.append(
+                {
+                    "code": "noncanonical-planning-artifact",
+                    "path": rel,
+                    "detail": (
+                        f"detected {kind}; classify it as reference, archive, "
+                        "roadmap, checkpoint, or active plan before selecting work"
+                    ),
+                }
+            )
 
         if is_roadmap:
             roadmap_paths.append(rel)
             authority = fields.get("execution_authority", "").lower()
             if not authority:
-                undeclared_roadmap_authority.append(rel)
+                if is_canonical_roadmap:
+                    undeclared_roadmap_authority.append(rel)
             elif authority != "none":
                 errors.append(
                     {
@@ -373,6 +420,44 @@ def validate_planning_authority(
                     "code": "incomplete-active-plan",
                     "path": rel,
                     "detail": ", ".join(missing),
+                }
+            )
+        execution_fields = (
+            "continuation_policy",
+            "completion_policy",
+            "priority_basis",
+            "delivery_contract",
+        )
+        missing_execution = [
+            field for field in execution_fields if not fields.get(field)
+        ]
+        if missing_execution:
+            warnings.append(
+                {
+                    "code": "incomplete-execution-discipline",
+                    "path": rel,
+                    "detail": ", ".join(missing_execution),
+                }
+            )
+        continuation_policy = fields.get("continuation_policy", "").lower()
+        if (
+            continuation_policy
+            and continuation_policy not in ALLOWED_CONTINUATION_POLICIES
+        ):
+            errors.append(
+                {
+                    "code": "invalid-continuation-policy",
+                    "path": rel,
+                    "detail": continuation_policy,
+                }
+            )
+        completion_policy = fields.get("completion_policy", "").lower()
+        if completion_policy and completion_policy not in ALLOWED_COMPLETION_POLICIES:
+            errors.append(
+                {
+                    "code": "invalid-completion-policy",
+                    "path": rel,
+                    "detail": completion_policy,
                 }
             )
         if authority and authority != "exclusive":
@@ -528,6 +613,7 @@ def validate_planning_authority(
             "active_plans": active_plans,
             "roadmaps": roadmap_paths,
             "checkpoints": checkpoint_paths,
+            "noncanonical_planning": noncanonical_planning_paths,
             "artifacts": [
                 path.relative_to(root).as_posix()
                 for path, _, _ in planning_records
@@ -619,6 +705,11 @@ def validate(root: Path, profile: str) -> dict[str, object]:
             errors.append({"code": "missing-required", "path": rel})
 
     files = markdown_files(root)
+    root_literals = {
+        str(root),
+        root.as_posix(),
+        str(root).replace("\\", "/"),
+    }
     for path in files:
         rel = path.relative_to(root).as_posix()
         try:
@@ -648,6 +739,17 @@ def validate(root: Path, profile: str) -> dict[str, object]:
                     "code": "personal-absolute-path",
                     "path": rel,
                     "detail": ", ".join(personal_paths[:5]),
+                }
+            )
+        if any(literal and literal in text for literal in root_literals):
+            warnings.append(
+                {
+                    "code": "repository-absolute-path",
+                    "path": rel,
+                    "detail": (
+                        "use repository-relative durable context; keep the "
+                        "host-local absolute path in a task-local handoff"
+                    ),
                 }
             )
 

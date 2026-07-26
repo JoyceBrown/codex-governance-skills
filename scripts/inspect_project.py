@@ -95,9 +95,29 @@ LOCKFILES = {
     "go.sum": "Go modules",
 }
 
-
 def relative(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
+
+
+def planning_artifact_kind(path: str) -> str | None:
+    """Classify exact and versioned planning filenames without substring traps."""
+    stem = Path(path).stem.lower()
+    tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", stem)
+        if token
+    }
+    if "roadmap" in tokens:
+        return "roadmap"
+    if "handoff" in tokens:
+        return "handoff"
+    if tokens & {"plan", "planning", "plans"}:
+        return "plan"
+    if tokens & {"task", "tasks", "todo", "todos"}:
+        return "tasks"
+    if "current" in tokens and tokens & {"current", "mainline", "work"}:
+        return "current"
+    return None
 
 
 def read_json(path: Path) -> dict[str, Any] | None:
@@ -204,20 +224,16 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         if path.lower().endswith(".md")
         and (path.lower().startswith("docs/") or "/docs/" in path.lower())
     )
-    planning_names = {
-        "current.md",
-        "plan.md",
-        "plans.md",
-        "roadmap.md",
-        "tasks.md",
-        "todo.md",
-    }
-    planning_files = sorted(
-        path
-        for path in rel_files
-        if path.lower().endswith(".md")
-        and Path(path).name.lower() in planning_names
+    planning_details = sorted(
+        (
+            {"path": path, "kind": kind}
+            for path in rel_files
+            if path.lower().endswith(".md")
+            if (kind := planning_artifact_kind(path)) is not None
+        ),
+        key=lambda item: item["path"],
     )
+    planning_files = [item["path"] for item in planning_details]
     agent_files = sorted(
         path
         for path in rel_files
@@ -274,6 +290,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
             "agents": agent_files,
             "docs": docs[:300],
             "planning": planning_files[:100],
+            "planning_details": planning_details[:100],
             "codex": codex_files[:300],
             "skills": skill_files[:300],
             "ci": ci_files[:100],
