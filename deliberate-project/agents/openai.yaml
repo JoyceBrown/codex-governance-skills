@@ -1,0 +1,4 @@
+interface:
+  display_name: "项目审议分析"
+  short_description: "三角色交叉审议项目证据、风险、标准与工程可行性分析"
+  default_prompt: "三堂会审：使用 $deliberate-project 审议当前项目中的一项重要决策，列出已统一或有条件成立的结论，并保留争议与未知。"
