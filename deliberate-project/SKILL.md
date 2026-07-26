@@ -208,7 +208,7 @@ When the skill itself is updated, synchronize the installed copy and repository 
 
 ## Manage Temporary Expertise
 
-Separate learning from rewriting the skill. Use three layers: (1) current-case memory, including snapshots, role notes, sources, and disputes, which expires with the case; (2) a governed experience catalog outside the project and skill directory, where reusable lessons are promoted automatically; and (3) this core procedure, which is changed only by the freeze/maintenance policy. If the host has no authorized catalog path, keep candidates transient and report that promotion was unavailable.
+Separate learning from rewriting the skill. Use three layers: (1) current-case memory, including snapshots, role notes, sources, and disputes, which expires with the case; (2) a governed experience catalog outside the project and skill directory, where reusable lessons are promoted automatically; and (3) this core procedure, which is changed only by the freeze/maintenance policy. Resolve the catalog root from host configuration first, then `AEGOS_SKILLS_EXPERIENCE_ROOT`, and use a `deliberate-project` namespace beneath it. If neither is available or writable under audit, keep candidates transient and report that promotion was unavailable.
 
 Automatic promotion uses four gates: evidence is traceable and privacy/licensing-safe; the lesson recurs across independent cases or closes a verified high-risk defect; scope, version, jurisdiction, expiry, and limitations are explicit; and comparison with existing lessons finds no unresolved contradiction. Record each item with its claim, source lineage, observed outcome, applicability, confidence, version, and recheck trigger.
 
