@@ -190,6 +190,22 @@ End the process when claim states are stable and no bounded verification is like
 
 If subagents are unavailable, one agent fails after correction, current evidence cannot be obtained, or the project changes in a way that invalidates reviewed evidence, degrade explicitly. A single agent may perform sequential falsification, deepening, and domain checks, but must label the result `Incomplete deliberation` and must not claim three-party consensus. Recheck the project snapshot and decision-critical evidence fingerprints before reporting; re-review affected claims when material evidence changed or freshness cannot be established.
 
+## Freeze and Maintain the Skill
+
+Treat the skill as a risk-controlled procedure, not a promise that every hypothetical defect has been eliminated. Freeze a stable version after one bounded red-team pass has checked these surfaces: safety or egress bypass, fabricated or misapplied sources, snapshot drift, false consensus, domain mismatch, and host/tool capability mismatch. Use the existing case and research ceilings; do not start an unbounded meta-review.
+
+Classify maintenance findings by consequence:
+
+- **P0/P1:** a bypass can cause unauthorized side effects or sensitive-data exposure, a fabricated or stale source can produce a consequential false conclusion, a failed role can be reported as consensus, or a known drift can be ignored. Patch before the stable version is used again.
+- **P2:** a material but contained omission, ambiguous downgrade, or recurring workflow inefficiency. Record it in the residual-risk section and patch when a real case or host change confirms it.
+- **P3:** wording preferences, speculative edge cases, or improvements with no material decision impact. Defer them to avoid rule bloat.
+
+The residual-risk record must state the risk, affected boundary, trigger or evidence, current mitigation, remaining limitation, and next review condition. Do not silently convert a residual risk into `Unified`. Reopen a frozen version only after a P0/P1 finding, a repeated P2 case, a host/tool/standard change, or an explicitly authorized capability change. When none of these triggers occurs, preserve the version and improve usage guidance rather than expanding the core contract.
+
+The standing residual risks are explicit: `SKILL.md` is a procedure, not a permission-enforcement mechanism; if the host cannot provide isolation or audit, the process must degrade rather than pretend that prose compensates. Temporary domain research can also remain incomplete, stale, or jurisdictionally wrong; report that limitation and do not convert it into professional certification.
+
+When the skill itself is updated, synchronize the installed copy and repository copy, validate both, and preserve the same internal identifier and invocation aliases. A stable version means bounded known risk and explicit degradation, not zero theoretical vulnerabilities.
+
 ## Manage Temporary Expertise
 
 Treat domain-acquisition briefs, role grounding notes, working source maps, and per-case expertise packets as transient deliberation material. Do not write them into project files, a local knowledge base, the skill store, or an external system during this skill. The report may identify concise promotion candidates, but identification is not permission to persist them.
