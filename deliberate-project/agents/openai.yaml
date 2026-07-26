@@ -1,7 +1,7 @@
 interface:
   display_name: "项目审议分析"
-  short_description: "三角色交叉审议项目证据、风险、标准与工程可行性分析"
-  default_prompt: "三堂会审：使用 $deliberate-project 审议当前项目的关键问题，基于证据报告结论、条件、争议、未知与覆盖限制，允许没有共识。"
+  short_description: "三角色按需调研领域知识，交叉审议项目证据、风险与工程判断"
+  default_prompt: "三堂会审：使用 $deliberate-project 按需调研相关领域并审议当前项目的关键问题，基于证据报告结论、条件、争议、未知与覆盖限制。"
 
 policy:
   allow_implicit_invocation: true
