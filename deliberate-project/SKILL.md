@@ -208,21 +208,18 @@ When the skill itself is updated, synchronize the installed copy and repository 
 
 ## Manage Temporary Expertise
 
-Treat domain-acquisition briefs, role grounding notes, working source maps, and per-case expertise packets as transient deliberation material. Do not write them into project files, a local knowledge base, the skill store, or an external system during this skill. The report may identify concise promotion candidates, but identification is not permission to persist them.
+Separate learning from rewriting the skill. Use three layers: (1) current-case memory, including snapshots, role notes, sources, and disputes, which expires with the case; (2) a governed experience catalog outside the project and skill directory, where reusable lessons are promoted automatically; and (3) this core procedure, which is changed only by the freeze/maintenance policy. If the host has no authorized catalog path, keep candidates transient and report that promotion was unavailable.
 
-Only a separately authorized post-deliberation workflow may promote knowledge:
+Automatic promotion uses four gates: evidence is traceable and privacy/licensing-safe; the lesson recurs across independent cases or closes a verified high-risk defect; scope, version, jurisdiction, expiry, and limitations are explicit; and comparison with existing lessons finds no unresolved contradiction. Record each item with its claim, source lineage, observed outcome, applicability, confidence, version, and recheck trigger.
 
-- Put stable project-specific facts, constraints, decisions, and operating guidance in the project's governed documentation.
-- Put repeated cross-project domain guidance in a separate domain skill or reference package, never in this general deliberation skill.
-- A lightweight capability catalog may retain only the domain, trusted capability or source entry point, version, last-checked date, and recheck trigger. It must not become an unreviewed copy of the research packet.
+Use this lifecycle: `Candidate` after extraction, `Shadow` when tested without changing verdicts, `Active` after repeated benefit with no material regression, and `Deprecated`, `Expired`, `Conflicted`, or `Rolled-back` when evidence or outcomes require it. Automatically decay unused or stale lessons. Never auto-install community skills, persist an entire research packet, or rewrite `SKILL.md` from ordinary cases.
 
-Promote an item only when every gate passes: it has demonstrated repeated value; its authoritative sources are traceable; it is stable enough to reuse; scope, jurisdiction, versions, and expiry or recheck conditions are explicit; it contains no secret, private, personal, or case-sensitive data; licensing permits reuse; and it does not duplicate or conflict with governed knowledge. Revalidate promoted knowledge at use time when versions, standards, law, or project state may have changed.
-
-Never auto-install community skills, persist an entire research packet, or turn `deliberate-project` into a domain encyclopedia.
+When a new lesson meets an old one, classify it as duplicate, refinement, narrower scope, superseding version, or true conflict. Merge duplicates; narrow or branch different scopes; supersede only with stronger applicable evidence and retain the old version; for a true conflict, quarantine both as `Conflicted`, do not use either as a hard rule, and use conditional analysis until independent evidence resolves it. Prefer mandatory authority, current direct project evidence, version-matched official material, independent reproduction, repeated experience, then inference. Current project evidence overrides catalog lessons. Record every replacement and rollback; never silently overwrite history.
 
 ## Respect Safety and Scope
 
 - Apply the declared safety mode. In `Enforced` mode, use host-level read/search restrictions and verify them. In `Controlled` mode, require an explicit per-role tool allowlist, complete role/tool event audit, redacted egress audit, and immutable before/after snapshot; if any is unavailable, use `safety_assurance=Unverified` and do not run live role work. In `Isolated` mode, keep all stateful diagnostics inside the disposable copy or sandbox and never connect it to production or external write targets. Prompt instructions alone are never called host enforcement.
+- Automatic experience promotion may append or version only in a host-preconfigured governed catalog outside the project and skill directory; audit that write and never write arbitrary external targets.
 - Let the primary agent use only demonstrably non-mutating diagnostics in live analysis. Use an isolated environment for stateful checks, and prefer an explicit verification gap over uncertain side effects.
 - Do not modify project artifacts, source code, plans, data, infrastructure, accounts, or external systems as part of deliberation.
 - Do not expand an analysis request into implementation. If implementation was explicitly requested too, begin it only after the council output and under the governing implementation workflow.
