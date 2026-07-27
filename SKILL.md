@@ -39,7 +39,7 @@ Infer the mode without asking when the situation is clear:
 - **Existing repository**: Code or project configuration already exists.
 - **Audit or refresh**: The user asks to review, simplify, repair, or update existing context files.
 
-For an existing repository, resolve `<skill-dir>` to the directory containing this `SKILL.md`, then run `python "<skill-dir>/scripts/inspect_project.py" <project-root>` before proposing files. Treat its output as evidence, then read only the relevant files it identifies. Do not infer commands, frameworks, paths, or architecture from naming alone.
+For an existing repository, resolve `<skill-dir>` to the directory containing this `SKILL.md`, then run `python "<skill-dir>/scripts/inspect_project.py" <project-root>` before proposing files. Treat its output as evidence, then read only the relevant files it identifies. If `scan.complete` is false, rerun with a higher limit or perform targeted reads before inferring that something is absent. Do not infer commands, frameworks, paths, or architecture from naming alone.
 
 After identifying the project type and concrete risk signals, read `references/experience-learning.md` when a private learning registry exists or the user asks the Skill to remember, learn, review experience, or improve itself. Query only locally accepted patterns that match the current project. Treat them as advisory until repository evidence confirms them.
 
@@ -118,7 +118,7 @@ Enable experience learning independently from the output profile:
 - `ask`: point out a reusable lesson after real friction and ask before saving a sanitized candidate; use this default.
 - `auto_sanitized`: save structured, sanitized candidates after real failures or user corrections, but never accept or promote them automatically.
 
-Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
+The registry tool enforces these modes: `off` rejects writes and `ask` requires a current confirmation flag. Sanitization is defense in depth, not proof that arbitrary text is safe; summarize structurally and inspect uncertain content before capture. When a new candidate conflicts with accepted local experience, compare evidence and explicitly supersede the older record; never use recency alone or locally override a promoted Skill rule. Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
 
 ### 5. Present the artifact plan
 
@@ -184,12 +184,13 @@ python "<skill-dir>/scripts/validate_project_context.py" <project-root> --profil
 Then verify:
 
 - every referenced path exists or is explicitly marked as planned
-- every command is present in project configuration or has been successfully run
+- every command has repository evidence or a successful run; treat validator warnings for command families it cannot prove mechanically as unresolved review items
 - no `{{PLACEHOLDER}}` remains
 - no concept has conflicting definitions across files
 - no roadmap or checkpoint can be mistaken for the active execution plan
 - versioned or non-canonical roadmap, plan, current-work, and handoff files have been inventoried instead of missed by exact-filename checks
 - at most one plan is marked active with exclusive execution authority
+- active planning fields do not conflict, and exactly one milestone is `in_progress` and matches `current_task_id`
 - active-plan metadata, current task, exclusions, validation, and completion behavior are explicit
 - bare continuation resolves to validate-then-advance, bundled work cannot be partially closed, and any delivery contract names its observable evidence
 - the latest material requirement change has one canonical class and updated only the existing or justified authority owners it actually affects
@@ -199,6 +200,7 @@ Then verify:
 - every applied local experience matches current repository evidence and project scope
 - no unreviewed experience candidate, generated memory, private path, secret, or raw transcript became project guidance
 - every promoted experience has user approval, forward-test evidence, and a regression test
+- advanced surfaces have passed syntax checks plus a separate semantic review of permissions, side effects, trust boundaries, and disable/recovery behavior
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
 - durable project files do not hard-code the current repository's host-local absolute path

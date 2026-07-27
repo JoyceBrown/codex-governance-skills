@@ -55,7 +55,7 @@ milestone. Partial completion of a required bundle is progress, not completion.
 | --- | --- | --- |
 | {{CURRENT_TASK_ID}} | in_progress | {{OUTCOME}} |
 
-Use only `pending`, `in_progress`, `blocked`, or `completed` for task status. Keep exactly one `in_progress` task unless the plan explicitly supports independent parallel work.
+Use only `pending`, `in_progress`, `blocked`, or `completed` for task status. Keep exactly one `in_progress` task and make it match `current_task_id`. Represent bounded parallel help in delegation packets, not as competing current plan authority.
 
 ## Risks and recovery
 

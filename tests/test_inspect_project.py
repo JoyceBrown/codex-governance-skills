@@ -90,6 +90,30 @@ class ProjectInspectionTests(unittest.TestCase):
             result["context_artifacts"]["planning"],
         )
 
+    def test_truncated_scan_is_explicitly_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index in range(5):
+                (root / f"file-{index}.txt").write_text("data\n", encoding="utf-8")
+
+            result = inspect(root, 2)
+
+        self.assertTrue(result["scan"]["truncated"])
+        self.assertFalse(result["scan"]["complete"])
+        self.assertIn("rerun", result["scan"]["required_follow_up"])
+
+    def test_root_documentation_and_test_configs_are_inventoried(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "README.md").write_text("# Readme\n", encoding="utf-8")
+            (root / "SECURITY.md").write_text("# Security\n", encoding="utf-8")
+            (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+
+            result = inspect(root, 100)
+
+        self.assertIn("SECURITY.md", result["context_artifacts"]["docs"])
+        self.assertIn("pytest.ini", result["context_artifacts"]["test_configs"])
+
 
 if __name__ == "__main__":
     unittest.main()

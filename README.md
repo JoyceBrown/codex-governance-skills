@@ -98,6 +98,8 @@ Codex 约束     -> 根或必要的嵌套 AGENTS.md
 
 未设置 `CODEX_HOME` 时使用个人 Codex 目录。这里保存的是本机私有生成状态，不会提交到公开仓库，也不保存原始聊天、源代码、客户名称、仓库路径、密钥或长日志。
 
+工具会实际执行模式边界：`off` 拒绝写入；`ask` 必须在用户本次同意后传入 `--confirm-capture`；`auto_sanitized` 才能自动登记候选。记录采用结构校验、原子替换，并在操作系统支持时使用私有文件权限。自动脱敏能识别常见令牌、带凭据 URL、密钥赋值、私钥块、邮箱和用户目录，但无法可靠识别所有客户名或业务敏感信息，因此只能登记概括后的结构化摘要，不能把原始材料交给脱敏器碰碰运气。
+
 查看当前记录模式：
 
 ```text
@@ -129,9 +131,14 @@ python "<skill-dir>\scripts\experience_registry.py" review EXP-20260726-1234abcd
 
 # 检查它是否具备进入 Skill 的基础证据
 python "<skill-dir>\scripts\experience_registry.py" assess EXP-20260726-1234abcd
+
+# 完成修改与测试后登记晋升；仅在当前用户明确批准时使用 --user-approved
+python "<skill-dir>\scripts\experience_registry.py" mark-promoted EXP-20260726-1234abcd --target SKILL.md --forward-test "representative fixture passed" --regression-test "unit suite passed" --approval-note "用户批准将该通用规则更新到 Skill" --user-approved
 ```
 
 `assess` 只检查机械门槛，不会修改 Skill，也不会替用户批准发布。
+
+若新候选针对同一问题和适用范围提出不同做法，工具会列出 `conflicts_with`，但不会按“较新”自动覆盖。接受替代方案时必须使用 `review ... --decision accept --supersedes <旧记录 ID>` 明确退役所有冲突的本地已接受经验。已经晋升进版本化 Skill 的经验不能在私有库里暗中覆盖，必须重新修改 Skill、做正向与回归测试并获得发布授权。
 
 详细规则见 [`references/experience-learning.md`](references/experience-learning.md)。
 
@@ -464,7 +471,7 @@ Skill 会提炼“发生了什么、为什么错、以后什么情况下应该�
 
 所以不能笼统地说“所有规则都会自动跟随”。真正会稳定跟随的是正确作用域中的持久规则；更近目录的 `AGENTS.md` 或 `AGENTS.override.md` 还可能改变最终生效规则。当前任务的具体意图必须进入活动计划、交接记录或主代理发送的任务包。
 
-另一个 Codex 任务要正式继续或接管时，还要传递工作树、分支、基准提交、未提交改动、当前目标、验收条件、最新用户决定、下一动作、外部副作用权限，以及它是“协助”“继续”还是“正式接管”。正式接管后，新任务负责集成和本次用户请求的最终汇报；“整个项目完成”仍需要单独的项目级验收标准。模板见 [`assets/templates/new-task-handoff.md`](assets/templates/new-task-handoff.md)。
+另一个 Codex 任务要正式继续或接管时，还要传递工作树、分支、基准提交、未提交改动、并发任务与重叠编辑范围、已失败尝试与策略变化、当前目标、验收条件、最新用户决定、下一动作、外部副作用权限，以及它是“协助”“继续”还是“正式接管”。正式接管后，新任务负责集成和本次用户请求的最终汇报；“整个项目完成”仍需要单独的项目级验收标准。模板见 [`assets/templates/new-task-handoff.md`](assets/templates/new-task-handoff.md)。
 
 子代理任务包至少包含：
 
@@ -553,14 +560,16 @@ python "<skill-dir>\scripts\validate_project_context.py" <project-root> --profil
 - 是否存在多个同时具有排他执行权的活动计划；
 - 活动计划的当前任务、允许范围、排除范围、验证和完成去向是否明确；
 - 活动计划是否声明 validate-then-advance、全部必需项完成、优先级依据和交付契约；
+- 同一规划字段是否出现冲突值，且是否只有一个与 `current_task_id` 一致的 `in_progress` 里程碑；
 - 活动计划是否记录了最新需求变更的 ID、分类和正确的长期权威引用；
 - 临时优先支线是否记录暂停工作、原因、影响和恢复条件；
 - `AGENTS.md` 是否包含需求分类路由和子代理权限边界；
 - 路线图中的复选框是否可能被误当成当前任务；
 - 永久项目文档是否硬编码当前仓库的本机绝对路径；
-- 已加入的高级 Codex 表面。
+- 已加入的高级 Codex 表面、配置语法，以及必须另行人工检查的权限、副作用和信任边界；
+- Python、Cargo、Go、Make、Maven、Gradle、.NET 等无法由验证器机械证明的命令声明。
 
-验证通过不等于业务代码正确，也不能替代项目测试。
+验证通过不等于业务代码正确，也不能替代项目测试。警告中的命令与高级表面必须保留为未验证事项，不能因为 `ok: true` 就声称已经证实。检查器若返回 `scan.complete: false`，必须提高 `--max-files` 或定向读取相关文件后再判断某项内容不存在。
 
 经验库工具：
 

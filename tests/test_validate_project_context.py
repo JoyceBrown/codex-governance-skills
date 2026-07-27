@@ -342,7 +342,7 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
             warning_paths,
         )
 
-    def test_active_plan_warns_when_execution_discipline_is_missing(self) -> None:
+    def test_active_plan_fails_when_execution_discipline_is_missing(self) -> None:
         temporary, root = self.make_project()
         self.addCleanup(temporary.cleanup)
         (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
@@ -358,9 +358,70 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
 
         result = validate(root, "minimal")
 
-        self.assertTrue(result["ok"])
+        self.assertFalse(result["ok"])
         self.assertIn(
             "incomplete-execution-discipline",
+            self.codes(result, "errors"),
+        )
+
+    def test_conflicting_duplicate_plan_field_fails(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace("status: active", "status: active\nstatus: completed")
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("conflicting-plan-field", self.codes(result, "errors"))
+
+    def test_active_plan_requires_one_matching_in_progress_milestone(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "| TASK-01 | in_progress | The feature works. |",
+            "| TASK-01 | pending | The feature works. |\n"
+            "| TASK-02 | in_progress | Another task runs. |",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("current-task-not-in-progress", self.codes(result, "errors"))
+
+    def test_non_package_command_claim_is_reported_unverified(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "README.md").write_text(
+            "# Project\n\nRun `pytest -q`.\n",
+            encoding="utf-8",
+        )
+
+        result = validate(root, "minimal")
+
+        self.assertIn(
+            "command-needs-manual-verification",
+            self.codes(result, "warnings"),
+        )
+
+    def test_invalid_advanced_surface_syntax_fails(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / ".codex").mkdir()
+        (root / ".codex" / "config.toml").write_text(
+            "[features\ninvalid = true\n",
+            encoding="utf-8",
+        )
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("invalid-codex-config", self.codes(result, "errors"))
+        self.assertIn(
+            "advanced-surfaces-require-semantic-review",
             self.codes(result, "warnings"),
         )
 

@@ -11,6 +11,7 @@ worktree: {{WORKTREE_PATH_OR_SAME_AS_REPOSITORY_ROOT}}
 branch: {{BRANCH_OR_NONE}}
 base_revision: {{COMMIT_OR_UNVERSIONED}}
 working_tree_state: {{CLEAN_OR_SUMMARY_OF_CHANGES_TO_PRESERVE}}
+concurrent_work_state: {{OTHER_TASKS_WORKTREES_BRANCHES_AND_OVERLAPPING_FILES_OR_NONE}}
 active_plan: {{PLAN_LINK_OR_NONE}}
 current_task_id: {{TASK_ID_OR_NONE}}
 latest_change_id: {{CHANGE_ID_OR_NONE}}
@@ -41,6 +42,11 @@ delivery_state: {{ARTIFACT_REPOSITORY_PUBLICATION_OR_NONE}}
 ## Exact next action
 
 {{ONE_ACTION_INSIDE_THE_ACTIVE_AUTHORITY}}
+
+## Attempts and strategy changes
+
+failed_attempts: {{COMMANDS_OR_APPROACHES_THAT_FAILED_AND_THE_OBSERVED_REASON_OR_NONE}}
+strategy_changes: {{WHAT_CHANGED_AFTER_FAILURE_AND_WHY_OR_NONE}}
 
 ## Remaining validation
 

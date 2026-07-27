@@ -8,6 +8,7 @@ Use this module when the user asks the Skill to remember a lesson, improve from 
 - [Private registry](#private-registry)
 - [Capture rule](#capture-rule)
 - [Review before reuse](#review-before-reuse)
+- [Resolve old and new conflicts](#resolve-old-and-new-conflicts)
 - [Apply accepted local patterns](#apply-accepted-local-patterns)
 - [Promote into the Skill](#promote-into-the-skill)
 - [Anti-drift rules](#anti-drift-rules)
@@ -46,13 +47,15 @@ By default it stores generated state under:
 <CODEX_HOME>/learning/bootstrap-codex-project/
 ```
 
-When `CODEX_HOME` is unset, use the normal user Codex home. The store is private local state and is never part of the public Skill repository.
+When `CODEX_HOME` is unset, use the normal user Codex home. The store is private local state and is never part of the public Skill repository. The tool uses private file permissions where the operating system supports them and atomic replacement for records. This reduces accidental exposure and partial writes; it does not make a shared or compromised user account confidential.
 
 Supported capture modes:
 
 - `off`: never propose or save experience candidates.
 - `ask`: detect reusable friction and ask before saving a sanitized candidate. This is the default.
 - `auto_sanitized`: during runs that use this Skill, automatically save only structured, sanitized candidates after a real failure or user correction; still require review before use.
+
+The CLI enforces the mode. `off` rejects capture. In `ask`, pass `--confirm-capture` only after the current user has agreed to save that candidate.
 
 This is not a background monitor. It does not observe unrelated development tasks where the Skill is not active.
 
@@ -81,6 +84,8 @@ Capture only when at least one concrete signal exists:
 
 Do not capture generic preferences, speculation, praise, raw transcripts, source code, client names, repository paths, credentials, personal data, or long logs.
 
+Automatic redaction covers common tokens, credentials in URLs, secret assignments, private-key blocks, email addresses, and user-home paths, but cannot reliably detect every client name or sensitive business fact. Always write a generalized summary; never use redaction as permission to submit raw material. Malformed records fail closed instead of being silently ignored.
+
 Record:
 
 - the problem in general terms
@@ -90,6 +95,8 @@ Record:
 - matching project types and observable signals
 - sanitized evidence summaries
 - severity and whether the failure was reproduced
+
+`project_specific` requires a project root and is deduplicated only inside that project. `project_family` requires a project type. Reusable scopes require at least one observable matching signal, so an empty-signal record cannot match every project.
 
 The tool deduplicates equivalent candidates, increments occurrence counts, and stores only a one-way project fingerprint instead of the project path.
 
@@ -103,7 +110,15 @@ Review it with the user:
 - `reject` -> `rejected`; keep it as evidence that the idea was considered.
 - `retire` -> `retired`; stop applying an older accepted pattern.
 
+Transitions are one-way: only a candidate can be accepted or rejected, and only an accepted or promoted record can be retired. Retired and rejected records cannot be reactivated by changing a review decision.
+
 Never auto-accept a candidate. When several candidates are pending, summarize them in plain language instead of asking the user to understand registry fields.
+
+## Resolve old and new conflicts
+
+When a new candidate describes the same normalized problem in the same scope, overlaps the same project or matching signals, and recommends a different response, the tool records `conflicts_with`. This catches direct contradictions; it is not semantic proof that differently worded lessons agree.
+
+Do not use recency alone. Compare source quality, current repository evidence, platform version, applicability, and observed outcomes. Reject the weaker candidate, or accept the replacement with `--supersedes <old-pattern-id>`. Acceptance is blocked until every conflicting `accepted_local` record is explicitly superseded; those older records become `retired` and point to the replacement. A local review cannot supersede a `promoted` record, because the version-controlled Skill and its tests must be changed through the full promotion process.
 
 ## Apply accepted local patterns
 
@@ -121,7 +136,7 @@ Use the result as advisory context:
 4. Put required behavior into this project's authoritative files or tests.
 5. Do not mention internal IDs unless the user asks for the learning audit trail.
 
-`project_specific` patterns apply only to the same project fingerprint. `project_family` patterns require a matching project type. `cross_project` patterns still require matching signals when signals are recorded.
+`project_specific` patterns apply only to the same project fingerprint. `project_family` patterns require a matching project type and signal. `cross_project` patterns always require matching signals.
 
 ## Promote into the Skill
 
@@ -152,6 +167,8 @@ Choose the smallest promotion target:
 | One project's rule | that project's `AGENTS.md`, docs, code, or tests; do not promote |
 
 After implementation, forward testing, regression testing, local Skill synchronization, and user-authorized publication, mark the record promoted with its target artifacts and regression tests. Promoted records are excluded from local recommendations to avoid injecting duplicate context.
+
+The `mark-promoted` command requires `--user-approved`, an approval note that names the approved change, at least one `--forward-test`, and at least one `--regression-test`. Every recorded test item must include a result such as `passed` or `exit=0`; filenames alone are not test evidence. Set `--user-approved` only from explicit authorization in the current task.
 
 ## Anti-drift rules
 

@@ -95,6 +95,12 @@ LOCKFILES = {
     "go.sum": "Go modules",
 }
 
+TEST_CONFIG_NAMES = {
+    "jest.config.js", "jest.config.cjs", "jest.config.mjs", "jest.config.ts",
+    "playwright.config.js", "playwright.config.ts", "pytest.ini", "tox.ini",
+    "vitest.config.js", "vitest.config.mjs", "vitest.config.ts",
+}
+
 def relative(path: Path, root: Path) -> str:
     return path.relative_to(root).as_posix()
 
@@ -222,7 +228,11 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         path
         for path in rel_files
         if path.lower().endswith(".md")
-        and (path.lower().startswith("docs/") or "/docs/" in path.lower())
+        and (
+            "/" not in path
+            or path.lower().startswith("docs/")
+            or "/docs/" in path.lower()
+        )
     )
     planning_details = sorted(
         (
@@ -251,6 +261,12 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         if path.startswith(".github/workflows/")
         or path in {".gitlab-ci.yml", "azure-pipelines.yml", "Jenkinsfile"}
     )
+    test_config_files = sorted(
+        path
+        for path in rel_files
+        if Path(path).name in TEST_CONFIG_NAMES
+        or Path(path).name.startswith(("jest.config.", "playwright.config.", "vitest.config."))
+    )
     experience_signals = []
     if len(docs) >= 8:
         experience_signals.append("many-docs")
@@ -275,7 +291,17 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
         "root": str(root),
         "non_empty": bool(top_level),
         "git_root": detect_git_root(root),
-        "scan": {"file_count": len(files), "truncated": truncated, "max_files": max_files},
+        "scan": {
+            "file_count": len(files),
+            "truncated": truncated,
+            "complete": not truncated,
+            "max_files": max_files,
+            "required_follow_up": (
+                "rerun with a higher --max-files value or targeted file reads"
+                if truncated
+                else None
+            ),
+        },
         "top_level": top_level[:200],
         "languages": [
             {"name": name, "file_count": count}
@@ -294,6 +320,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
             "codex": codex_files[:300],
             "skills": skill_files[:300],
             "ci": ci_files[:100],
+            "test_configs": test_config_files[:100],
         },
         "write_risks": {
             "existing_readme": "README.md" in rel_set,

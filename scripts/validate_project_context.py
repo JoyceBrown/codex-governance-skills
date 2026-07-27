@@ -12,6 +12,11 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11
+    tomllib = None
+
 
 EXCLUDED_DIRS = {
     ".git",
@@ -88,6 +93,14 @@ ON_COMPLETE_RE = re.compile(
 )
 ALLOWED_CONTINUATION_POLICIES = {"validate_then_advance"}
 ALLOWED_COMPLETION_POLICIES = {"all_required_items"}
+MILESTONE_ROW_RE = re.compile(
+    r"^\|\s*([^|]+?)\s*\|\s*(pending|in_progress|completed|blocked|deferred)\s*\|",
+    re.IGNORECASE | re.MULTILINE,
+)
+MANUAL_COMMAND_PREFIXES = {
+    "cargo", "dotnet", "go", "gradle", "gradlew", "make", "mvn", "mvnw",
+    "py", "pytest", "python", "python3",
+}
 
 PROFILE_REQUIRED = {
     "minimal": ["README.md", "AGENTS.md"],
@@ -254,6 +267,27 @@ def planning_fields(text: str) -> dict[str, str]:
     }
 
 
+def planning_field_duplicates(text: str) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for key, value in PLAN_FIELD_RE.findall(text):
+        values.setdefault(key.lower(), []).append(value.strip())
+    return {key: entries for key, entries in values.items() if len(entries) > 1}
+
+
+def manual_command_claim(snippet: str) -> str | None:
+    try:
+        tokens = shlex.split(snippet, posix=True)
+    except ValueError:
+        return None
+    if tokens and tokens[0] in {"$", ">"}:
+        tokens = tokens[1:]
+    if not tokens:
+        return None
+    command = Path(tokens[0]).name.lower()
+    command = command.removesuffix(".exe").removesuffix(".cmd").removesuffix(".bat")
+    return command if command in MANUAL_COMMAND_PREFIXES else None
+
+
 def has_heading(text: str, heading: str) -> bool:
     return bool(
         re.search(
@@ -287,6 +321,20 @@ def validate_planning_authority(
             continue
 
         fields = planning_fields(text)
+        for field, values in planning_field_duplicates(text).items():
+            normalized = {value.strip().lower() for value in values}
+            target = errors if len(normalized) > 1 else warnings
+            target.append(
+                {
+                    "code": (
+                        "conflicting-plan-field"
+                        if len(normalized) > 1
+                        else "duplicate-plan-field"
+                    ),
+                    "path": rel,
+                    "detail": f"{field}: {', '.join(values)}",
+                }
+            )
         name = path.name.lower()
         kind = planning_artifact_kind(name)
         is_plan = name in {"plan.md", "plans.md"} or "plan_id" in fields
@@ -432,7 +480,7 @@ def validate_planning_authority(
             field for field in execution_fields if not fields.get(field)
         ]
         if missing_execution:
-            warnings.append(
+            errors.append(
                 {
                     "code": "incomplete-execution-discipline",
                     "path": rel,
@@ -528,12 +576,36 @@ def validate_planning_authority(
                 )
 
         current_task = fields.get("current_task_id", "")
-        if current_task and text.count(current_task) < 2:
-            warnings.append(
+        milestones = [
+            (task.strip(), status.lower())
+            for task, status in MILESTONE_ROW_RE.findall(text)
+        ]
+        in_progress = [task for task, status in milestones if status == "in_progress"]
+        if len(in_progress) != 1:
+            errors.append(
                 {
-                    "code": "current-task-not-listed",
+                    "code": "invalid-in-progress-count",
                     "path": rel,
-                    "detail": f"{current_task} appears only in metadata",
+                    "detail": f"expected 1, found {len(in_progress)}",
+                }
+            )
+        if current_task and not any(task == current_task for task, _ in milestones):
+            errors.append(
+                {
+                    "code": "current-task-not-in-milestones",
+                    "path": rel,
+                    "detail": current_task,
+                }
+            )
+        elif current_task and not any(
+            task == current_task and status == "in_progress"
+            for task, status in milestones
+        ):
+            errors.append(
+                {
+                    "code": "current-task-not-in-progress",
+                    "path": rel,
+                    "detail": current_task,
                 }
             )
 
@@ -657,28 +729,44 @@ def validate_command_claims(
 
         for snippet in command_snippets(text):
             claim = parse_package_command(snippet)
-            if claim is None:
+            if claim is not None:
+                manager, script = claim
+                if expected_manager and manager != expected_manager:
+                    key = ("package-manager-mismatch", rel, snippet)
+                    if key not in seen:
+                        errors.append(
+                            {
+                                "code": key[0],
+                                "path": rel,
+                                "detail": f"{snippet}; repository evidence selects {expected_manager}",
+                            }
+                        )
+                        seen.add(key)
+                if script and scripts and script not in scripts:
+                    key = ("unknown-package-script", rel, snippet)
+                    if key not in seen:
+                        warnings.append(
+                            {
+                                "code": key[0],
+                                "path": rel,
+                                "detail": f"{snippet}; script '{script}' is absent from package manifests",
+                            }
+                        )
+                        seen.add(key)
                 continue
-            manager, script = claim
-            if expected_manager and manager != expected_manager:
-                key = ("package-manager-mismatch", rel, snippet)
-                if key not in seen:
-                    errors.append(
-                        {
-                            "code": key[0],
-                            "path": rel,
-                            "detail": f"{snippet}; repository evidence selects {expected_manager}",
-                        }
-                    )
-                    seen.add(key)
-            if script and scripts and script not in scripts:
-                key = ("unknown-package-script", rel, snippet)
+
+            manual_command = manual_command_claim(snippet)
+            if manual_command:
+                key = ("command-needs-manual-verification", rel, snippet)
                 if key not in seen:
                     warnings.append(
                         {
                             "code": key[0],
                             "path": rel,
-                            "detail": f"{snippet}; script '{script}' is absent from package manifests",
+                            "detail": (
+                                f"{snippet}; {manual_command} commands are inventoried "
+                                "but not mechanically proven by this validator"
+                            ),
                         }
                     )
                     seen.add(key)
@@ -841,6 +929,51 @@ def validate(root: Path, profile: str) -> dict[str, object]:
     ):
         if (root / rel).exists():
             advanced_surfaces.append(rel)
+    config_path = root / ".codex" / "config.toml"
+    if config_path.exists():
+        try:
+            if tomllib is None:
+                raise ValueError("TOML validation requires Python 3.11+")
+            tomllib.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            errors.append(
+                {
+                    "code": "invalid-codex-config",
+                    "path": ".codex/config.toml",
+                    "detail": str(exc),
+                }
+            )
+    hooks_path = root / ".codex" / "hooks.json"
+    if hooks_path.exists():
+        try:
+            json.loads(hooks_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            errors.append(
+                {
+                    "code": "invalid-hooks-json",
+                    "path": ".codex/hooks.json",
+                    "detail": str(exc),
+                }
+            )
+    if advanced_surfaces:
+        warnings.append(
+            {
+                "code": "advanced-surfaces-require-semantic-review",
+                "path": ".",
+                "detail": (
+                    "syntax and inventory checks do not prove permissions, side effects, "
+                    "hook behavior, rule coverage, agent quality, or MCP trust boundaries"
+                ),
+            }
+        )
+    elif profile == "advanced":
+        warnings.append(
+            {
+                "code": "advanced-profile-without-advanced-surfaces",
+                "path": ".",
+                "detail": "use standard unless a demonstrated need justifies an advanced surface",
+            }
+        )
     info.append({"code": "advanced-surfaces", "paths": advanced_surfaces})
 
     return {

@@ -117,6 +117,7 @@ repository_root and worktree
 target task identity and how it was resolved
 branch and base revision
 working-tree state and user changes that must be preserved
+concurrent tasks, worktrees, branches, and overlapping edit scopes
 active plan and current task ID
 latest user decision and requirement-change class
 current objective and observable acceptance criteria

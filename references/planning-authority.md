@@ -111,6 +111,8 @@ It must also state:
 - validation evidence gathered so far
 - decisions that changed the plan
 
+Declare each metadata field once. Conflicting duplicate values are invalid. Keep exactly one milestone `in_progress`, and make its task ID equal `current_task_id`; delegated parallel work remains subordinate to that current task.
+
 `priority_basis` states why the current task is the highest-value authorized
 work. `delivery_contract` is `none` when no artifact or external state belongs
 to the objective; otherwise it names the evidence required for delivery
