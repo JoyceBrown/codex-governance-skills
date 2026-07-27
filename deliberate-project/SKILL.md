@@ -1,6 +1,6 @@
 ---
 name: deliberate-project
-description: "Evidence-backed multi-angle initial inquiry or re-review for a concrete software, product, technical, or engineering project, including current-state and change-impact cases. Use to discover decision-relevant details, hidden assumptions, relationships, risks, opportunities, competing interpretations, and evidence gaps through three baseline roles combined with prompt-aware focus selection, dynamically selected review angles and reasoning methods, domain knowledge, evidence comparison, and verification instruments. Preserve disagreement instead of forcing agreement, and adjudicate between options only when the user explicitly requests a decision. Treat an explicit $deliberate-project invocation or the Chinese phrase \u4E09\u5802\u4F1A\u5BA1 as a direct request. Do not use for implementation-only work, isolated explanations or bug fixes, routine reviews, one-inspection answers, generic research without project context, or personal planning."
+description: "Evidence-backed multi-angle inquiry or re-review of a concrete software, product, technical, or engineering project, including current-state and change-impact cases. Activate only when the user explicitly invokes $deliberate-project or uses the exact Chinese phrase \u4E09\u5802\u4F1A\u5BA1 for project analysis; do not activate because a project merely appears complex, consequential, or suitable for multiple perspectives. Once activated, use three baseline roles, prompt-aware focus, dynamic review angles and methods, domain grounding, evidence comparison, and verification to uncover hidden assumptions, relationships, risks, opportunities, competing judgments, and evidence gaps. Preserve disagreement; adjudicate only when explicitly requested. Do not use for implementation-only work, isolated explanations or bug fixes, routine or one-inspection reviews, generic research without project context, personal planning, or requests merely discussing or modifying this skill."
 ---
 
 # Project Deliberation
@@ -26,13 +26,16 @@ If already assigned as a Falsifier, Deepener, or Domain engineer inside an activ
 
 ## Apply the Activation Gate
 
-Require the first two conditions for every activation. An explicit `$deliberate-project` invocation or the Chinese alias bypasses only the third condition:
+Proceed only when the current user request explicitly contains `$deliberate-project` or the exact Chinese phrase `三堂会审`. A contextual reference to this skill, a complex-looking project, or a generic request for analysis is not an activation. If explicit invocation is absent, continue with the ordinary task workflow immediately.
+
+After explicit invocation, require both conditions:
 
 - A concrete software, product, technical, or engineering project is in scope.
 - The requested outcome is analysis, evaluation, diagnosis, audit, feasibility, risk, architecture, standards, requirements reconciliation, change impact, or a consequential project judgment.
-- At least one material complexity signal exists: cross-component scope, high consequence, high uncertainty, conflicting evidence, multiple stakeholder constraints, or substantial shared-blind-spot risk.
 
 If the gate fails, continue with the ordinary task workflow.
+
+When the gate passes, run the full baseline discovery. Do not create a reduced quick-review variant inside this skill, and do not use a preliminary risk classification to skip the Falsifier, Deepener, Domain engineer, breadth map, or evidence map. Use discovered consequence and uncertainty only to allocate depth after baseline discovery; treat material unknowns as reasons to deepen or disclose coverage, never as evidence of low importance.
 
 ## Preflight Runtime and Safety
 
@@ -220,18 +223,16 @@ Freeze stable core behavior after bounded validation. Reopen it for a safety/sou
 
 ## Format the Result
 
-Follow the user's requested format, but always include a compact mandatory disclosure block containing case profile, snapshot identities/types/drift, access profile, safety assurance, roles or methods unavailable, inquiry completion state, budget exhaustion or deferred coverage, representation-attestation status, applied experience IDs or catalog unavailability, and any post-report experience write with catalog path and lesson IDs. Then report in this order unless the user requested another arrangement:
+Maintain the complete structured case record required by this workflow, but separate inquiry depth from presentation length. Follow the user's requested format. Unless the user requests a full audit report, default to these compact layers:
 
-1. **Judgment landscape:** the most consequential current judgments, without forcing them into one conclusion.
-2. **Scope and inquiry portfolio:** objective, case profile, snapshots/drift, roles used, selected angles/methods, domains, capabilities, probes, prior-record coverage, applied experience, and important omissions.
-3. **Material findings:** new and persisting details organized by topic or impact, with finding IDs, technical change state when applicable, response class, and concise evidence.
-4. **Derived and competing judgments:** conditions, relationships, uncertainty, and consequences if wrong.
-5. **Evidence comparison:** strongest support, contrary evidence, lineage/common-cause risk, freshness, and applicability.
-6. **Risks, opportunities, and affected stakeholders.**
-7. **Coverage gaps and next discriminating checks.**
-8. **Optional adjudication:** only when the user requested a decision.
+1. **Judgment landscape:** the most consequential judgments without forced convergence.
+2. **Material findings:** decision-relevant findings, response classes, conditions, affected parties, and concise evidence.
+3. **Evidence and uncertainty:** strongest support, contrary evidence, competing explanations, common-cause risk, and material gaps.
+4. **Next checks or adjudication:** the most discriminating next checks, plus a recommendation only when the user requested one.
 
-Keep the user-facing report concise and do not dump internal role dialogue or hidden reasoning.
+Append a compact **Inquiry record** containing case profile, snapshot identities/types/drift, access profile, safety assurance, unavailable roles or methods, inquiry completion state, exhausted budget or deferred coverage, representation-attestation status, applied experience IDs or catalog unavailability, and any post-report experience write with catalog path and lesson IDs. Keep these as terse key-value entries when they do not affect interpretation. Move any governance fact into the main body when it materially limits reliability, changes a judgment, blocks action, or creates a safety or authorization concern.
+
+For a requested full audit report, expand the same record into scope and portfolio, material findings, derived and competing judgments, evidence comparison, risks and opportunities, affected stakeholders, coverage gaps, next checks, and optional adjudication. Presentation compression must never remove material contrary evidence, uncertainty, minority findings, coverage limitations, or the basis of a consequential judgment. Do not dump internal role dialogue, private chain-of-thought, or raw agent records.
 
 ## Reference Routing
 
