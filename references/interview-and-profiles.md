@@ -9,13 +9,16 @@ Ask only for missing information that changes the result. Prefer repository evid
 | Missing area | Ask when | Example question |
 | --- | --- | --- |
 | User and problem | The project purpose is ambiguous | Who will use this, and what concrete problem should it solve first? |
+| Problem evidence | A first release is being planned from an unvalidated idea | What have you observed about this problem, and how do people handle it today? |
 | Primary workflow | Several products could fit the description | What is the one end-to-end action the first release must complete? |
 | Scope | The brief lists many features | Which capabilities belong in the first usable release, and which are explicitly out? |
+| Solo constraints | Available time, budget, or maintenance capacity could change the release shape | How much time and ongoing cost can you sustain, and what must remain easy for one person to operate? |
 | Runtime shape | It changes the architecture | Is this local-only, a hosted service, a desktop app, or a library? |
 | Data sensitivity | Personal, financial, medical, or production data may be involved | What sensitive data exists, and where may it be stored or transmitted? |
 | Collaboration | Auth, roles, or workflow may change | Is this for one person or multiple users with different permissions? |
 | Commands | The repository does not establish them | What are the authoritative install, start, test, and build commands? |
 | Deployment | Operations documentation may be needed | Where will the project run, and who operates it? |
+| Stage decision | The user asks whether to advance, release, pivot, or stop | What evidence or user-visible result must be present before you make that decision? |
 | Current focus | Several plans or todo lists could appear active | What do you want Codex to finish first right now? |
 | Completion routing | Work should continue across plans or sessions | When that work is done, should Codex stop for review, return to a named task, or start another named task? |
 | Temporary exclusions | The user is reprioritizing work | Which areas should Codex leave alone for now? |

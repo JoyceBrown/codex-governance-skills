@@ -1,6 +1,6 @@
 ---
 name: bootstrap-codex-project
-description: Turn a software idea or an existing repository into a minimal, accurate, maintainable Codex context system. Use when starting or bootstrapping a project, creating or repairing README.md and AGENTS.md, organizing project documentation, preparing a long-running project, separating an active plan from a long-term roadmap, classifying mid-project requirement changes, handing work to a new task or subagent, learning from recurring project friction, reviewing or promoting reusable project lessons, deciding whether nested AGENTS.md files are needed, or auditing stale and duplicated AI instructions. Adapt the output to the user's experience and repository evidence; generate advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only when a demonstrated need requires them.
+description: Turn a software idea or existing repository into a minimal, accurate, maintainable Codex context system. Use when bootstrapping or auditing a project; creating or repairing README.md, AGENTS.md, or project documentation; defining an evidence-based MVP or first vertical slice; comparing reuse with custom implementation; assessing solo-software stage or release readiness; deciding whether to continue, simplify, pivot, or stop; separating active plans from roadmaps; classifying mid-project requirement changes; handing work to a new task or subagent; learning from validated project friction; deciding whether nested AGENTS.md files are needed; or auditing stale and duplicated AI instructions. Adapt output to user experience and repository evidence. Add advanced Codex configuration, skills, planning controls, rules, hooks, MCP guidance, or custom agents only for a demonstrated need.
 ---
 
 # Bootstrap Codex Project
@@ -50,9 +50,12 @@ After identifying the project type and concrete risk signals, read `references/e
 Normalize the available information into:
 
 - purpose and target users
+- observed problem evidence and the current alternative when product value is in scope
 - concrete user outcome
 - primary workflow
+- first-release value loop, success signals, and stop or reassessment conditions when relevant
 - scope and explicit non-goals
+- solo delivery constraints such as available time, budget, operating cost, and maintenance capacity when they affect the result
 - technology and deployment facts
 - repository map and verified commands
 - evidence state for material claims
@@ -90,6 +93,8 @@ Do not equate project size with configuration count. A large project may need on
 ### 4. Select optional modules
 
 Select optional modules independently from the output profile. A Standard project does not automatically need planning controls, and a Minimal project may need one when it has a concrete recurring failure.
+
+Enable the solo-software delivery module when the user is shaping a first release, asks whether a product or milestone is ready to advance, needs an evidence-based reuse-versus-build decision, is preparing a release, or must decide whether to continue, simplify, pivot, or stop. Read `references/solo-software-delivery.md` completely before proposing lifecycle gates or delivery artifacts. Do not enable it for an ordinary isolated bug fix, explanation, or implementation request merely because the repository is software.
 
 Enable the planning-authority module only when at least one signal exists:
 
@@ -139,10 +144,13 @@ Apply these ownership rules:
 
 - Put the short project introduction, setup, and navigation in `README.md`.
 - Put product behavior and boundaries in `docs/product.md`.
+- When the solo-software delivery module is active, put problem evidence, the current alternative, the core value loop, first-release boundaries, success signals, and reassessment conditions in `docs/product.md`; do not create a parallel product brief or MVP file unless an existing project already owns those names.
 - Put module boundaries and data flow in `docs/architecture.md`.
+- Put durable reuse-versus-build conclusions in the applicable architecture or decision owner. Create a separate research document only when the comparison is substantial and must be revisited independently.
 - Put entity meaning and invariants in `docs/data-model.md` when the domain is non-trivial.
 - Put ambiguous domain terms in `docs/glossary.md`.
 - Put durable decisions and tradeoffs in `docs/decisions/`.
+- Put release checks in `docs/testing.md` and operational release, rollback, backup, observability, and post-release checks in `docs/operations.md` when those concerns exist.
 - Put long-term direction in `docs/roadmap.md` only when the project has a real roadmap. It does not authorize work.
 - Put the one active long-running execution plan in `PLANS.md` when planning authority is enabled.
 - Put temporary progress and cross-session handoff state in `docs/work/current.md`. It records work but does not authorize new work.
@@ -204,6 +212,8 @@ Then verify:
 - nested `AGENTS.md` files add local information instead of duplicating the root
 - no secrets, personal absolute paths, or unsafe permission defaults were introduced
 - durable project files do not hard-code the current repository's host-local absolute path
+- when the solo-software delivery module is active, each lifecycle gate distinguishes evidence from assumptions, names blocking conditions, and routes durable conclusions to one canonical owner
+- no lifecycle recommendation silently authorizes a Git commit, push, deployment, production migration, data deletion, purchase, or other external side effect
 - relevant project tests or checks pass when implementation files changed
 
 Treat validator warnings as review prompts, not automatic failures. Fix errors and explain any intentionally retained warning.
@@ -252,6 +262,7 @@ Do not claim the project is fully configured when commands, deployment, security
   atomic completion, priority, blocker, retry, delivery, terminology,
   effective-state, or blast-radius signals.
 - Read `references/experience-learning.md` when capturing, reviewing, applying, retiring, or promoting experience across projects.
+- Read `references/solo-software-delivery.md` when validating a product problem, defining an MVP or first vertical slice, comparing reuse with custom implementation, assessing stage readiness, preparing a release, or deciding whether to continue, simplify, pivot, or stop.
 - Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.
 - Read `references/design-sources.md` only when maintaining this skill or explaining how its design relates to existing open-source approaches.

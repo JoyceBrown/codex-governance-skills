@@ -16,9 +16,17 @@
 
 {{END_TO_END_DATA_FLOW}}
 
+## First vertical slice
+
+{{SHORTEST_PRODUCTION_SHAPED_PATH_AND_VALIDATION}}
+
 ## Technology choices
 
 {{VERIFIED_TECHNOLOGY_AND_REASONS}}
+
+## Reuse and custom-build decisions
+
+{{EXISTING_OFFICIAL_MATURE_OR_CUSTOM_OPTIONS_AND_EVIDENCE}}
 
 ## Cross-cutting constraints
 

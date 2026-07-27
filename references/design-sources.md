@@ -34,3 +34,5 @@ The result is not an "AI configuration bundle." It is a semantic project context
 ## Internal design standard
 
 `skill-design-principles.md` is the maintenance standard distilled from the user discussion that produced this Skill. Its central rule is that the Skill's diagnostic ability should be comprehensive while its generated structure remains minimal and evidence-based. It also defines natural-language entry, progressive disclosure, evidence states, planning authority, validation-based completion, safe degradation, and evidence-gated learning from real project friction.
+
+The solo-software delivery module synthesizes a user-provided independent-development methodology. It retains product-problem evidence, a smallest complete value loop, reuse-first technical reconnaissance, a first vertical slice, release readiness, post-release learning, and product/engineering/operations review perspectives. It deliberately rejects a mandatory ten-file document tree, prompt-handbook duplication, a permanent `TASK.md` for ordinary work, and any implication that a lifecycle recommendation grants commit, push, deployment, migration, or release authority.
