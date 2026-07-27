@@ -1,6 +1,6 @@
 ---
 name: deliberate-project
-description: "Evidence-backed multi-angle project inquiry for a concrete software, product, technical, or engineering project. Use to discover decision-relevant details, hidden assumptions, relationships, risks, opportunities, competing interpretations, and evidence gaps through three baseline roles combined with prompt-aware focus selection, dynamically selected review angles and reasoning methods, domain knowledge, evidence comparison, and verification instruments. Preserve disagreement instead of forcing agreement, and adjudicate between options only when the user explicitly requests a decision. Treat an explicit $deliberate-project invocation or the Chinese phrase \u4E09\u5802\u4F1A\u5BA1 as a direct request. Do not use for implementation-only work, isolated explanations or bug fixes, routine reviews, one-inspection answers, generic research without project context, or personal planning."
+description: "Evidence-backed multi-angle initial inquiry or re-review for a concrete software, product, technical, or engineering project, including current-state and change-impact cases. Use to discover decision-relevant details, hidden assumptions, relationships, risks, opportunities, competing interpretations, and evidence gaps through three baseline roles combined with prompt-aware focus selection, dynamically selected review angles and reasoning methods, domain knowledge, evidence comparison, and verification instruments. Preserve disagreement instead of forcing agreement, and adjudicate between options only when the user explicitly requests a decision. Treat an explicit $deliberate-project invocation or the Chinese phrase \u4E09\u5802\u4F1A\u5BA1 as a direct request. Do not use for implementation-only work, isolated explanations or bug fixes, routine reviews, one-inspection answers, generic research without project context, or personal planning."
 ---
 
 # Project Deliberation
@@ -36,7 +36,7 @@ If the gate fails, continue with the ordinary task workflow.
 
 ## Preflight Runtime and Safety
 
-Before creating role agents, establish the project boundary, access profile, safety assurance, available tools, context capacity, and a stable evidence snapshot.
+Before creating role agents, establish the project boundary, case profile, access profile, safety assurance, available tools, context capacity, and stable evidence snapshots.
 
 Use three fresh baseline role contexts when the host provides capacity, non-inheriting context, follow-up delivery, bounded waiting, and reliable failure detection. Dispatch all three before consuming first-round results. If those properties are unavailable, perform the same role-method portfolios sequentially in the primary context, keep separate role packets, and mark role independence and coverage accurately. In sequential mode, re-enter each role brief for cross-expansion but report `representation_attestation=Unavailable-sequential`; the primary must not sign on behalf of an originating role. A missing role narrows coverage; it does not invalidate unrelated findings or prevent reporting.
 
@@ -58,7 +58,8 @@ Use `safety_assurance=Verified` only when relevant controls and audit were indep
 - Distinguish the current task instruction from product goals, end-user needs, approved decisions, external commitments, and stakeholder positions.
 - Inspect available evidence before asking questions. Use labeled reversible assumptions or conditional scenarios when possible.
 - Ask at most one consolidated question only when the answer cannot be inspected or safely inferred and would materially reshape the inquiry.
-- Create one snapshot identity. Prefer a commit, content-addressed frozen copy, or exported immutable revision and bind every role read to it. If only a live-file manifest is available, label it `Manifest-bound`, attach the relevant content fingerprint to every material observation, and never call the live tree immutable. Check drift before cross-expansion and reporting. On material drift, stop merging affected items, mark them `Snapshot-stale`, create a new snapshot identity, and rerun only affected role work and verification; never synthesize two snapshots as one case state.
+- Create a two-axis case profile: `continuity_mode=Initial | Re-review` and `comparison_mode=Current-state | Delta`. These axes are independent: a re-review may also compare a baseline and current revision. Use `Initial` when no prior inquiry record governs the case and `Re-review` when prior finding IDs, judgments, dispositions, or verification results must be reconciled. Use `Delta` only when a named baseline and current state are both available; otherwise use `Current-state` and disclose the missing comparison boundary.
+- Create one current snapshot identity. In `Delta`, also create a separate baseline snapshot and never merge their observations without a visible before/after relation. Prefer commits, content-addressed frozen copies, or exported immutable revisions and bind every role read to the appropriate identity. If only a live-file manifest is available, label it `Manifest-bound`, attach the relevant content fingerprint to every material observation, and never call the live tree immutable. Check drift before cross-expansion and reporting. On material drift, stop merging affected items, mark them `Snapshot-stale`, create a new snapshot identity, and rerun only affected role work and verification; never synthesize two snapshots as one case state.
 
 Create a compact focus profile before selecting methods. Record the primary and secondary success functions, explicit focuses, excluded focuses, target actors, critical workflows, decisive metrics, hard constraints, risk and time horizon, prompt-derived signals, project-derived signals, and material ambiguity. Preserve compound intent: for example, treat a "profitable music product" as coupled business, user-value, and audio-engineering judgments rather than letting one keyword erase the others.
 
@@ -67,10 +68,14 @@ Resolve focus signals in this order: governing safety, legal, rights, and author
 ### 2. Build the Breadth and Evidence Map
 
 - Map relevant components, interfaces, dependencies, documents, tests, plans, runtime evidence, data, standards, stakeholders, lifecycle stages, external constraints, and known failures.
+- In `Re-review`, load the prior project-specific finding and judgment ledger. Keep it separate from the cross-project experience catalog. Reuse a finding ID when its meaning is unchanged, version it when scope or meaning changes, and create a new ID for a genuinely new finding. Do not re-raise resolved items as current defects; preserve them in the change summary and mark anything not rechecked explicitly.
+- In `Delta`, map additions, removals, changed controls, validation, constraints, compatibility paths, interfaces, callers, data flows, user workflows, and operational effects. Inspect enough unchanged context to test system invariants; a diff alone is not the system boundary. Classify each relevant prior item as unchanged, resolved, persisting, regressed, superseded, or not rechecked.
 - Record what was inspected deeply, sampled, scanned, or not inspected. Never generalize beyond actual coverage.
 - Trace decision-critical paths end to end and inspect adjacent effects.
 - Keep project-internal, interface, and whole-system findings separate when multiple projects are involved.
 - Treat the map as navigation rather than a conclusion. Require every role to inspect the relevant primary material independently.
+
+After the focus profile and case profile are stable, read `references/experience-governance.md` and use the catalog's read-only `load` operation when a catalog is configured. Filter returned lessons against the current domain, scope, version, jurisdiction or market, time horizon, and recheck trigger before routing any method. An `Active` lesson may provide a defeasible routing hint. A `Shadow` lesson may only suggest a check. Catalog experience is never project evidence, never satisfies a finding dimension, and never overrides the current snapshot. Record the IDs actually applied; continue without them when the catalog is unavailable.
 
 Set a bounded case budget before deep work. Unless a tighter limit applies, use at most eight priority judgment areas, two centralized verification batches, and three inquiry passes: isolated discovery, cross-expansion, and one post-verification pass. Per-role caps of six source lineages, twelve retrieval/tool actions, and twenty-four reviewed pages or items are cumulative across the whole case, including probes owned by that role. Reserve capacity for cross-expansion and verification instead of spending the full budget on discovery. The primary may approve one bounded extension, no larger than the initial case budget, when a high-consequence discriminating check would otherwise be omitted; record the reason and new ceiling. Let high-consequence gaps consume the budget first and record deferred coverage explicitly.
 
@@ -81,6 +86,8 @@ Read `references/inquiry-methods.md` before assigning role work. Derive priority
 Allocate attention ordinally: first to explicit requested outcomes and acceptance evidence, then hard constraints and high-consequence failure, then critical workflow and feasibility, then secondary risks and opportunities, and lastly generic best practice. Do not invent numeric weights. When goals interact, create bridge judgments that test the relationship between them, such as whether audio workflow quality can produce willingness to pay and sustainable retention.
 
 Select a bounded portfolio of materially different angles and methods. Prefer combinations likely to produce orthogonal information rather than several labels that inspect the same material in the same way. Every selected method must have an owner, evidence requirement, output expectation, and stopping condition. Record a short reason for omitting any method that appears materially applicable; do not enumerate irrelevant methods.
+
+For `Delta`, include change-impact tracing only where changed or removed behavior could propagate beyond the edited surface. For `Re-review`, reserve capacity to verify prior material findings before searching for new ones. Do not let historical findings anchor first-round discovery: give roles the current case and assigned prior IDs only when their method requires comparison.
 
 The initial portfolio normally includes at least:
 
@@ -171,13 +178,15 @@ Read `references/finding-judgment-model.md` before synthesis.
 - State the consequence if a material judgment is wrong.
 - Keep unresolved competing judgments side by side with their conditions and discriminating evidence.
 
+Before assigning a response class, cross-check every material finding in both directions: distinguish mechanism from consequence, distinguish duplicates from interacting findings, trace any combined consequence chain, seek a concrete counterargument, and test whether impact was overstated or understated. Reviewer count never sets impact. After this check, the primary assigns exactly one response class from `Governing-blocker`, `Material-concern`, `Improvement`, or `Observation` as defined in the finding model. This class describes required attention, not evidence strength, lifecycle state, inquiry completion, or an adjudicated choice.
+
 Use calibrated discovery states: `Observed`, `Supported`, `Contested`, `Conditional`, `Open`, `User-dependent`, `Coverage-limited`, or `Superseded`. These describe the current inquiry, not role agreement.
 
 ### 9. Stop on Information Gain
 
 Use distinct inquiry completion states:
 
-- `Complete`: all priority areas have meaningful coverage or explicit gaps; every material judgment records evidence, conditions, impact, and uncertainty; competing interpretations and minority findings remain represented; the most decision-relevant viable checks are complete; and another bounded pass has low expected information value.
+- `Complete`: within the declared case profile and snapshot boundaries, all priority areas have meaningful coverage or explicit gaps; every material judgment records evidence, conditions, impact, and uncertainty; competing interpretations and minority findings remain represented; the most decision-relevant viable checks are complete; and another bounded pass has low expected information value. `Complete` never claims that the whole project, an uninspected baseline, or all historical findings were examined.
 - `Partial`: time, source, tool, role, or inquiry budget ended the work after at least one material area was responsibly examined, with unfinished areas and their consequences disclosed.
 - `Blocked`: no material area could be responsibly examined, or snapshot/safety failure prevents synthesis.
 
@@ -191,17 +200,17 @@ Adjudication uses binding constraints, engineering feasibility, authorized objec
 
 ## Maintain Experience Without Rewriting the Core
 
-Separate current-case notes, a governed experience catalog, and this core procedure. Read `references/experience-governance.md` before any catalog operation. Only the primary may use `scripts/experience_catalog.py`, and only after the inquiry report is stable. Role agents never write experience.
+Separate current-case notes, project-specific prior findings, a governed cross-project experience catalog, and this core procedure. Read `references/experience-governance.md` before any catalog operation. Before method routing, only the primary may run the read-only `resolve`, `doctor`, `load`, `list`, or `show` operations. Only after the inquiry report is stable may the primary run `observe`, `resolve-conflict`, `retire`, `refresh`, or `migrate`. Role agents never operate the catalog.
 
-Resolve the catalog root from an explicit host-provided path, then `AEGOS_SKILLS_EXPERIENCE_ROOT`, using a fixed `deliberate-project` namespace. A configured root authorizes only the bounded, audited catalog operations described in the reference; it does not authorize project or arbitrary external writes. If no configured, writable root exists, keep candidates transient and report that promotion was unavailable.
+Resolve the catalog root only from the configured host file, then `AEGOS_SKILLS_EXPERIENCE_ROOT`, using a fixed `deliberate-project` namespace. The automated CLI accepts no arbitrary root override. A configured root authorizes only the bounded, audited catalog operations described in the reference; it does not authorize project or arbitrary external writes. If no configured, writable root exists, keep candidates transient and report that promotion was unavailable.
 
-Experience may improve method routing, trigger recognition, source evaluation, or recurring failure detection. Persist only redacted reusable lessons with traceable evidence locators, explicit scope/version/jurisdiction/expiry, privacy and licensing review, and no unresolved conflict. Use `Candidate`, `Shadow`, `Active`, `Deprecated`, `Expired`, `Conflicted`, and `Rolled-back`. Shadow lessons may suggest methods but cannot silently alter findings or judgments. Current project evidence always overrides catalog experience.
+Experience may improve method routing, trigger recognition, source evaluation, or recurring failure detection. Persist only redacted reusable lessons linked to verified current-case evidence IDs, a safe snapshot or fingerprint ID, traceable source lineages, explicit scope/version/jurisdiction/expiry, privacy and licensing review, and no unresolved conflict. Use `Candidate`, `Shadow`, `Active`, `Deprecated`, `Expired`, `Conflicted`, and `Rolled-back` only for reusable lessons; never map them to current finding states or response classes. Shadow lessons may suggest methods but cannot silently alter findings or judgments. Current project evidence always overrides catalog experience.
 
 Freeze stable core behavior after bounded validation. Reopen it for a safety/source-integrity failure, repeated material workflow defect, host/tool/standard change, or explicitly authorized capability change. Prefer improving a routed method card over adding another universal core rule.
 
 ## Respect Safety and Scope
 
-- Do not modify project artifacts, code, plans, data, infrastructure, accounts, or external systems during inquiry. The only standing exception is the post-report governed experience operation above when a catalog root was explicitly configured.
+- Do not modify project artifacts, code, plans, data, infrastructure, accounts, or external systems during inquiry. Read-only experience loading is allowed before routing. The only standing write exception is the post-report governed experience operation above when a catalog root was explicitly configured.
 - Keep stateful diagnostics inside an isolated disposable environment.
 - Exclude write-capable operations from role capability ledgers.
 - Do not disclose secrets, private code, customer data, or identifiable private information to external search.
@@ -211,11 +220,11 @@ Freeze stable core behavior after bounded validation. Reopen it for a safety/sou
 
 ## Format the Result
 
-Follow the user's requested format, but always include a compact mandatory disclosure block containing snapshot identity/type/drift, access profile, safety assurance, roles or methods unavailable, inquiry completion state, budget exhaustion or deferred coverage, representation-attestation status, and any post-report experience write with catalog path and lesson IDs. Then report in this order unless the user requested another arrangement:
+Follow the user's requested format, but always include a compact mandatory disclosure block containing case profile, snapshot identities/types/drift, access profile, safety assurance, roles or methods unavailable, inquiry completion state, budget exhaustion or deferred coverage, representation-attestation status, applied experience IDs or catalog unavailability, and any post-report experience write with catalog path and lesson IDs. Then report in this order unless the user requested another arrangement:
 
 1. **Judgment landscape:** the most consequential current judgments, without forcing them into one conclusion.
-2. **Scope and inquiry portfolio:** objective, snapshot/drift, roles used, selected angles/methods, domains, capabilities, probes, and important omissions.
-3. **Material findings:** new details organized by topic or impact, with finding IDs and concise evidence.
+2. **Scope and inquiry portfolio:** objective, case profile, snapshots/drift, roles used, selected angles/methods, domains, capabilities, probes, prior-record coverage, applied experience, and important omissions.
+3. **Material findings:** new and persisting details organized by topic or impact, with finding IDs, technical change state when applicable, response class, and concise evidence.
 4. **Derived and competing judgments:** conditions, relationships, uncertainty, and consequences if wrong.
 5. **Evidence comparison:** strongest support, contrary evidence, lineage/common-cause risk, freshness, and applicability.
 6. **Risks, opportunities, and affected stakeholders.**

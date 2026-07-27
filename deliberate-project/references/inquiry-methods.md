@@ -5,6 +5,7 @@ Use this catalog to compose a bounded inquiry portfolio. Select methods because 
 ## Contents
 
 - [Prompt and requirement focus extraction](#prompt-and-requirement-focus-extraction)
+- [Case continuity and comparison](#case-continuity-and-comparison)
 - [Selection procedure](#selection-procedure)
 - [Observation angles](#observation-angles)
 - [Reasoning methods](#reasoning-methods)
@@ -49,11 +50,34 @@ Preserve compound focuses and create bridge judgments instead of choosing one la
 
 When ambiguity between materially different focus profiles remains after inspecting available evidence, ask one consolidated question. Otherwise preserve the alternatives as labeled scenario branches and continue.
 
+## Case Continuity and Comparison
+
+Classify two independent axes before choosing methods:
+
+```text
+continuity_mode: Initial | Re-review
+comparison_mode: Current-state | Delta
+```
+
+`Initial` means no prior inquiry record governs the current case. `Re-review` means prior finding or judgment IDs, dispositions, or verification results must be reconciled. `Current-state` inspects one declared snapshot. `Delta` compares a named baseline and current snapshot. Do not force these into one enumeration: `Re-review + Delta` is a normal combination.
+
+In `Re-review`, reserve method capacity to retest prior material findings, but do not reveal their conclusions to an isolated role unless that role's assigned method requires historical comparison. Separate technical change from stakeholder response.
+
+In `Delta`, add a bounded change-impact method when propagation could matter:
+
+1. Map additions, removals, and changed controls, validation, constraints, compatibility paths, and interfaces.
+2. Inspect enough unchanged context to identify governing invariants and baseline assumptions.
+3. Trace affected callers, dependencies, data, states, users, operators, lifecycle stages, and recovery paths.
+4. Classify whether the change resolves, preserves, amplifies, reintroduces, or supersedes a prior condition.
+5. Scale depth by consequence and impact radius: deep for governing or high-consequence paths, focused for bounded dependencies, and local only when propagation is demonstrably contained.
+
+Do not treat a diff as complete evidence of the resulting system. Do not run change-impact work for a current-state case without a real baseline.
+
 ## Selection Procedure
 
 For each priority judgment area:
 
-1. Derive the area from the focus profile, domain-critical conditions, and project evidence; record which signal justified its priority.
+1. Derive the area from the focus profile, case profile, domain-critical conditions, prior material findings when applicable, and project evidence; record which signal justified its priority.
 2. Classify the judgment as factual, causal, predictive, feasibility, normative, comparative, preference, or recommendation.
 3. Identify consequence, uncertainty, reversibility, affected actors, lifecycle stages, system boundaries, and evidence modalities.
 4. Select the smallest set of angles and methods likely to produce distinct findings.

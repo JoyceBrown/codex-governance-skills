@@ -10,6 +10,7 @@ Use this module to normalize discoveries, cross-expand them, preserve disagreeme
 - [Relationships](#relationships)
 - [Relation record](#relation-record)
 - [Cross-expansion](#cross-expansion)
+- [Re-review and response classification](#re-review-and-response-classification)
 - [Discovery states](#discovery-states)
 
 ## Keep Output Types Separate
@@ -49,6 +50,14 @@ coverage_limit
 ```
 
 A finding is material when it changes a judgment, option, risk, opportunity, professional sufficiency assessment, or a premise on which another material item depends.
+
+Role agents leave lifecycle, stakeholder response, and response classification to the primary. After evidence comparison and cross-checking, the primary may append:
+
+```text
+technical_change_state
+stakeholder_response_state
+response_class
+```
 
 ## Judgment Card
 
@@ -122,6 +131,38 @@ Cross-expansion seeks additional information rather than matching language. For 
 
 Require representation attestation from the originating role: every material first-round item is mapped, explicitly excluded with a reason, or marked lost due to coverage/runtime failure. This checks preservation, not correctness or completeness.
 
+## Re-review and Response Classification
+
+Keep three questions separate:
+
+- **Technical change:** what happened to the project condition?
+- **Stakeholder response:** what did an authorized person do about it?
+- **Required attention:** how should the current report present it after evidence and consequence checks?
+
+For `Re-review` or `Delta`, use `technical_change_state` only when prior or baseline evidence exists:
+
+- `New`: not present in the governing prior record or baseline scope;
+- `Persisting`: the same material condition still exists;
+- `Resolved`: applicable evidence verifies that the condition no longer exists;
+- `Regressed`: a previously resolved condition returned;
+- `Superseded`: a newer finding or changed scope replaces the prior meaning;
+- `Not-rechecked`: current access, snapshot, or method did not support a responsible retest.
+
+Use `stakeholder_response_state` independently when a response is evidenced:
+
+- `Unaddressed`, `Acknowledged`, `Contested`, `Deferred`, or `Accepted-risk`.
+
+Acknowledgment does not prove resolution. No response does not prove persistence. Accepted risk does not weaken the technical finding or authorize another party to accept it.
+
+After evidence comparison, mechanism-to-consequence tracing, counterargument testing, common-cause review, and bidirectional impact calibration, assign one `response_class`:
+
+- `Governing-blocker`: verified applicable law, mandatory safety/security/privacy control, authorization boundary, binding constraint, or engineering infeasibility blocks the stated goal within the finding's scope;
+- `Material-concern`: the finding could materially change success, risk, feasibility, cost, stakeholder outcome, or a consequential judgment and needs visible resolution or acceptance;
+- `Improvement`: a supported enhancement with value that does not invalidate the stated goal or current judgment;
+- `Observation`: useful context that requires no present action.
+
+An uncertain severe possibility is not a governing blocker; keep it `Material-concern` with `Open`, `Conditional`, or `Coverage-limited` as appropriate. Response class is not evidence strength, confidence, discovery state, inquiry completion, or adjudication. Reviewer count never determines it.
+
 ## Discovery States
 
 - `Observed`: directly observed in applicable project evidence or a reproducible check.
@@ -133,7 +174,7 @@ Require representation attestation from the originating role: every material fir
 - `Coverage-limited`: a role, angle, method, evidence dimension, or inspection modality is missing.
 - `Superseded`: a newer version replaces the item while history remains.
 
-States may coexist across dimensions. A judgment can be supported but coverage-limited, or conditional and contested. Do not collapse evidence basis, sufficiency, project implementation state, and safety assurance into one label.
+States may coexist across dimensions. A judgment can be supported but coverage-limited, or conditional and contested. Do not collapse evidence basis, sufficiency, technical change, stakeholder response, response class, project implementation state, and safety assurance into one label.
 
 Store states as a set in `current_states`; never overwrite one valid state with another. Keep `uncertainty` explicit and describe its source, direction or range when known, sensitivity, and what could reduce it. Use `Snapshot-stale` as a temporary processing state when drift invalidates the observation boundary; do not synthesize it until the affected work is rebound or rerun.
 
