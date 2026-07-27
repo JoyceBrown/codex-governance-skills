@@ -16,7 +16,7 @@ Use this module to read reusable cross-project lessons before method routing and
 
 Resolve the catalog root from the host config file selected by `DELIBERATE_PROJECT_EXPERIENCE_CONFIG` or the default `CODEX_HOME/deliberate-project-experience-root.txt`, then `AEGOS_SKILLS_EXPERIENCE_ROOT`. The config file contains exactly one existing absolute directory path. The automated CLI accepts no `--root` override. Configuration authorizes only `scripts/experience_catalog.py` to create or update the fixed `deliberate-project/experience.sqlite3` catalog beneath that root; it authorizes no other external write.
 
-Only the primary agent may operate the catalog. Read-only operations may run after the case and focus profiles are stable and before method routing. Mutating operations may run only after the inquiry report is stable. Role agents return transient candidate material and never receive catalog write capability. If the configured root is missing, invalid, or not writable for a required mutation, do not create a substitute location; continue without persistence and disclose the gap.
+Only the primary agent may operate the catalog. Read-only operations may run after the case and focus profiles are stable and before method routing. Mutating operations may run only after the inquiry report is stable and only when the current request does not prohibit persistence or all writes. A configured root is an approved storage capability, not authority to override a current read-only instruction. Role agents return transient candidate material and never receive catalog write capability. If mutation is prohibited or the configured root is missing, invalid, or not writable, do not create a substitute location; continue without persistence and disclose the gap.
 
 ## Pre-inquiry Read Path
 
@@ -45,14 +45,16 @@ The CLI stores these attestations and exposes them through `show`. It cannot det
 
 The tool enforces event validity and legal transitions:
 
-1. A new lesson begins in `Candidate` and accepts only verified `candidate` observations. Two independent candidate case IDs move it to `Shadow`. A verified high-risk workflow fix may enter `Shadow` after one candidate case but never `Active` directly.
-2. `Shadow` accepts verified `shadow-benefit`, `shadow-regression`, or `conflict` observations. Only benefits recorded while the lesson was already `Shadow`, from two independent case IDs, move it to `Active`.
+1. A new lesson begins in `Candidate` and accepts only verified `candidate` observations. Two distinct cases with non-overlapping declared source lineages move it to `Shadow`. A verified high-risk workflow fix may enter `Shadow` after one candidate case but never `Active` directly.
+2. `Shadow` accepts verified `shadow-benefit`, `shadow-regression`, or `conflict` observations. Only benefits recorded while the lesson was already `Shadow`, from two distinct cases with non-overlapping declared source lineages, move it to `Active`.
 3. `Active` accepts only verified regression or conflict observations, plus an explicit retirement operation.
 4. A verified regression moves `Shadow` or `Active` to `Rolled-back`.
 5. `Expired`, `Deprecated`, and `Rolled-back` reject ordinary observations and cannot be silently revived.
 6. `Conflicted` rejects ordinary observations until an explicit conflict-resolution operation restores or retires the affected lessons.
 7. A duplicate lesson/case/outcome tuple is idempotent: it reports `duplicate=true`, makes no change, and does not update a high-risk flag or gate count.
 8. Read operations compute expiry without writing. `load` excludes expired lessons immediately. `refresh` exists only to persist expiry transitions in history.
+
+Different case IDs are necessary but not sufficient for independence. Observations that share any declared source locator belong to the same lineage component and receive one promotion credit. Mirrors, repeated fixtures, multiple URLs from one publisher, or evidence derived from the same upstream material must declare that shared lineage; renaming a source or evidence ID to evade this gate violates the catalog contract.
 
 Every accepted transition is appended inside the same database transaction. Version 1 catalogs migrate to version 2 without losing lessons or transition history. Migrated observations are labeled `Legacy-attested`: version 1 required privacy and licensing flags but did not retain the complete evidence attestation now required. They preserve existing status but do not count toward new promotion gates.
 

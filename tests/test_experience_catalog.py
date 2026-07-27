@@ -58,6 +58,7 @@ class ExperienceCatalogTests(unittest.TestCase):
         claim: str = "Stable project lesson",
         outcome: str = "candidate",
         high_risk: bool = False,
+        source: str | list[str] = "source:test-suite",
         related_lesson_id: str | None = None,
         expect_ok: bool = True,
     ) -> dict[str, object]:
@@ -81,8 +82,10 @@ class ExperienceCatalogTests(unittest.TestCase):
             "verified test fixture only",
             "--outcome",
             outcome,
-            "--source",
-            "source:test-suite",
+        ]
+        for source_item in ([source] if isinstance(source, str) else source):
+            args.extend(["--source", source_item])
+        args.extend([
             "--evidence-id",
             f"evidence:{case_id}",
             "--snapshot-id",
@@ -92,7 +95,7 @@ class ExperienceCatalogTests(unittest.TestCase):
             "--verified",
             "--privacy-reviewed",
             "--license-reviewed",
-        ]
+        ])
         if high_risk:
             args.append("--high-risk-fix")
         if related_lesson_id:
@@ -136,15 +139,75 @@ class ExperienceCatalogTests(unittest.TestCase):
     def test_only_post_shadow_benefits_promote_to_active(self) -> None:
         lesson_id = self.promote_to_shadow("Promotion lesson", "promotion-candidate")
         first = self.observe(
-            case_id="benefit-1", claim="Promotion lesson", outcome="shadow-benefit"
+            case_id="benefit-1",
+            claim="Promotion lesson",
+            outcome="shadow-benefit",
+            source="source:independent-benefit-1",
         )
         second = self.observe(
-            case_id="benefit-2", claim="Promotion lesson", outcome="shadow-benefit"
+            case_id="benefit-2",
+            claim="Promotion lesson",
+            outcome="shadow-benefit",
+            source="source:independent-benefit-2",
         )
         self.assertEqual(first["status"], "Shadow")
         self.assertEqual(second["status"], "Active")
         self.assertEqual(second["verified_shadow_benefit_cases"], 2)
+        self.assertEqual(
+            second["verified_independent_shadow_benefit_lineages"], 2
+        )
         self.assertEqual(second["lesson_id"], lesson_id)
+
+    def test_same_lineage_cases_do_not_satisfy_promotion_gates(self) -> None:
+        first = self.observe(case_id="same-lineage-candidate-1")
+        second = self.observe(case_id="same-lineage-candidate-2")
+        self.assertEqual(first["status"], "Candidate")
+        self.assertEqual(second["status"], "Candidate")
+        self.assertEqual(second["verified_observation_counts"]["candidate"], 2)
+        self.assertEqual(second["verified_independent_candidate_lineages"], 1)
+
+        third = self.observe(
+            case_id="independent-candidate",
+            source="source:independent-candidate",
+        )
+        self.assertEqual(third["status"], "Shadow")
+        self.assertEqual(third["verified_independent_candidate_lineages"], 2)
+
+    def test_same_lineage_shadow_benefits_do_not_activate_lesson(self) -> None:
+        self.promote_to_shadow("Correlated benefit lesson", "benefit-candidate")
+        self.observe(
+            case_id="correlated-benefit-1",
+            claim="Correlated benefit lesson",
+            outcome="shadow-benefit",
+        )
+        second = self.observe(
+            case_id="correlated-benefit-2",
+            claim="Correlated benefit lesson",
+            outcome="shadow-benefit",
+        )
+        self.assertEqual(second["status"], "Shadow")
+        self.assertEqual(second["verified_shadow_benefit_cases"], 2)
+        self.assertEqual(
+            second["verified_independent_shadow_benefit_lineages"], 1
+        )
+
+    def test_shared_source_transitively_forms_one_lineage_component(self) -> None:
+        self.observe(
+            case_id="component-a",
+            source=["source:origin-a", "source:shared-upstream"],
+        )
+        second = self.observe(
+            case_id="component-b",
+            source=["source:shared-upstream", "source:origin-b"],
+        )
+        self.assertEqual(second["status"], "Candidate")
+        self.assertEqual(second["verified_independent_candidate_lineages"], 1)
+
+        third = self.observe(
+            case_id="component-c", source="source:independent-origin"
+        )
+        self.assertEqual(third["status"], "Shadow")
+        self.assertEqual(third["verified_independent_candidate_lineages"], 2)
 
     def test_regression_rolls_back_shadow_but_not_candidate(self) -> None:
         self.observe(case_id="ordinary-candidate", claim="Candidate lesson")

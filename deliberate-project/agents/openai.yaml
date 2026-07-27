@@ -4,4 +4,4 @@ interface:
   default_prompt: "使用 $deliberate-project 根据我的提示词、目标、要求与约束自动判断审理侧重点，再从多种角度、推导方式和证据路径分析当前项目；保留竞争判断，仅在我明确要求时定案。"
 
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

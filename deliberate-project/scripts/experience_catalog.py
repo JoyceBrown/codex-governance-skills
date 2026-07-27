@@ -436,6 +436,38 @@ def counts(
     return result
 
 
+def independent_lineage_count(
+    connection: sqlite3.Connection,
+    lesson_id: str,
+    outcome: str,
+    status_at_observation: str | None = None,
+) -> int:
+    query = (
+        "SELECT case_id, source_lineage_json FROM observations "
+        "WHERE lesson_id = ? AND outcome = ? AND verification_state = 'Verified'"
+    )
+    params: list[object] = [lesson_id, outcome]
+    if status_at_observation is not None:
+        query += " AND status_at_observation = ?"
+        params.append(status_at_observation)
+    rows = connection.execute(query, tuple(params)).fetchall()
+
+    # Shared locators connect observations into one upstream lineage component.
+    components: list[set[str]] = []
+    for row in rows:
+        sources = set(json.loads(row["source_lineage_json"]))
+        touching = [item for item in components if item & sources]
+        if not touching:
+            components.append(sources)
+            continue
+        merged = set(sources)
+        for item in touching:
+            merged.update(item)
+            components.remove(item)
+        components.append(merged)
+    return len(components)
+
+
 def shadow_benefit_count(connection: sqlite3.Connection, lesson_id: str) -> int:
     row = connection.execute(
         "SELECT COUNT(DISTINCT case_id) FROM observations "
@@ -458,6 +490,14 @@ def fetch_lesson(connection: sqlite3.Connection, lesson_id: str) -> dict[str, ob
     result["all_observation_counts"] = counts(connection, lesson_id, False)
     result["verified_shadow_benefit_cases"] = shadow_benefit_count(
         connection, lesson_id
+    )
+    result["verified_independent_candidate_lineages"] = independent_lineage_count(
+        connection, lesson_id, "candidate"
+    )
+    result["verified_independent_shadow_benefit_lineages"] = (
+        independent_lineage_count(
+            connection, lesson_id, "shadow-benefit", "Shadow"
+        )
     )
     return result
 
@@ -532,7 +572,7 @@ def observe(args: argparse.Namespace) -> dict[str, object]:
     recheck_trigger = checked_text(args.recheck_trigger, "recheck_trigger", 1000)
     limitations = checked_text(args.limitations, "limitations", 1000)
     case_id = checked_case_id(args.case_id)
-    sources = [checked_source(item) for item in args.source]
+    sources = sorted({checked_source(item) for item in args.source})
     if not sources or len(sources) > 20:
         raise CatalogError("provide between 1 and 20 safe source locators")
     evidence_ids = checked_evidence_ids(args.evidence_id)
@@ -708,20 +748,25 @@ def observe(args: argparse.Namespace) -> dict[str, object]:
                     (lesson_id,),
                 ).fetchone()
                 candidate_count = counts(connection, lesson_id, True)["candidate"]
-                if current["high_risk_fix"] or candidate_count >= 2:
+                independent_count = independent_lineage_count(
+                    connection, lesson_id, "candidate"
+                )
+                if current["high_risk_fix"] or independent_count >= 2:
                     reason = (
                         "verified high-risk fix entered Shadow"
                         if current["high_risk_fix"] and candidate_count < 2
-                        else "independent recurrence gate satisfied"
+                        else "independent case and source-lineage gate satisfied"
                     )
                     transition(connection, lesson_id, "Shadow", reason, now)
             elif args.outcome == "shadow-benefit":
-                if shadow_benefit_count(connection, lesson_id) >= 2:
+                if independent_lineage_count(
+                    connection, lesson_id, "shadow-benefit", "Shadow"
+                ) >= 2:
                     transition(
                         connection,
                         lesson_id,
                         "Active",
-                        "two verified post-Shadow benefit cases satisfied",
+                        "two independent verified post-Shadow benefit cases satisfied",
                         now,
                     )
 
