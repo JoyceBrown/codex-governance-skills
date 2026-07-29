@@ -18,7 +18,8 @@ from typing import Iterator
 
 NAMESPACE = "deliberate-project"
 DATABASE_NAME = "experience.sqlite3"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+READABLE_SCHEMA_VERSIONS = {2, 3}
 STATUSES = {
     "Candidate",
     "Shadow",
@@ -206,7 +207,7 @@ def connect(
         initialize(connection)
     else:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version != SCHEMA_VERSION and not allow_legacy_read:
+        if version not in READABLE_SCHEMA_VERSIONS and not allow_legacy_read:
             connection.close()
             if version == 1:
                 raise CatalogError("catalog schema 1 requires the migrate command")
@@ -214,7 +215,7 @@ def connect(
     return connection
 
 
-def create_schema_v2(connection: sqlite3.Connection) -> None:
+def create_schema_v3(connection: sqlite3.Connection) -> None:
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS lessons (
@@ -279,7 +280,21 @@ def create_schema_v2(connection: sqlite3.Connection) -> None:
             verification_method TEXT NOT NULL,
             created_at TEXT NOT NULL
         );
-        PRAGMA user_version = 2;
+        CREATE TABLE IF NOT EXISTS case_evaluations (
+            case_id TEXT PRIMARY KEY,
+            result TEXT NOT NULL CHECK (result IN (
+                'lesson-recorded', 'no-eligible-lesson'
+            )),
+            lesson_ids_json TEXT NOT NULL,
+            evidence_ids_json TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            evaluation_method TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            privacy_reviewed INTEGER NOT NULL CHECK (privacy_reviewed IN (0, 1)),
+            license_reviewed INTEGER NOT NULL CHECK (license_reviewed IN (0, 1)),
+            created_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 3;
         """
     )
 
@@ -325,12 +340,40 @@ def migrate_v1_to_v2(connection: sqlite3.Connection) -> None:
     )
 
 
+def migrate_v2_to_v3(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        BEGIN IMMEDIATE;
+        CREATE TABLE case_evaluations (
+            case_id TEXT PRIMARY KEY,
+            result TEXT NOT NULL CHECK (result IN (
+                'lesson-recorded', 'no-eligible-lesson'
+            )),
+            lesson_ids_json TEXT NOT NULL,
+            evidence_ids_json TEXT NOT NULL,
+            snapshot_id TEXT NOT NULL,
+            evaluation_method TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            privacy_reviewed INTEGER NOT NULL CHECK (privacy_reviewed IN (0, 1)),
+            license_reviewed INTEGER NOT NULL CHECK (license_reviewed IN (0, 1)),
+            created_at TEXT NOT NULL
+        );
+        PRAGMA user_version = 3;
+        COMMIT;
+        """
+    )
+
+
 def initialize(connection: sqlite3.Connection) -> None:
     version = connection.execute("PRAGMA user_version").fetchone()[0]
     if version == 0:
-        create_schema_v2(connection)
-    elif version == 1:
+        create_schema_v3(connection)
+        return
+    if version == 1:
         migrate_v1_to_v2(connection)
+        version = 2
+    if version == 2:
+        migrate_v2_to_v3(connection)
     elif version != SCHEMA_VERSION:
         raise CatalogError(f"unsupported catalog schema version: {version}")
 
@@ -608,6 +651,13 @@ def observe(args: argparse.Namespace) -> dict[str, object]:
     connection = connect(path, writable=True, create=True)
     try:
         with transaction(connection):
+            finalized = connection.execute(
+                "SELECT 1 FROM case_evaluations WHERE case_id = ?", (case_id,)
+            ).fetchone()
+            if finalized is not None:
+                raise CatalogError(
+                    "case experience evaluation is finalized; observations are closed"
+                )
             existing = connection.execute(
                 "SELECT * FROM lessons WHERE lesson_id = ?", (lesson_id,)
             ).fetchone()
@@ -784,6 +834,116 @@ def observe(args: argparse.Namespace) -> dict[str, object]:
                 }
             )
             return result
+    finally:
+        connection.close()
+
+
+def case_evaluation_row(
+    connection: sqlite3.Connection, case_id: str
+) -> dict[str, object] | None:
+    row = connection.execute(
+        "SELECT * FROM case_evaluations WHERE case_id = ?", (case_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    result = dict(row)
+    result["lesson_ids"] = json.loads(result.pop("lesson_ids_json"))
+    result["evidence_ids"] = json.loads(result.pop("evidence_ids_json"))
+    result["privacy_reviewed"] = bool(result["privacy_reviewed"])
+    result["license_reviewed"] = bool(result["license_reviewed"])
+    return result
+
+
+def finalize_case(args: argparse.Namespace) -> dict[str, object]:
+    if not args.evaluated or not args.privacy_reviewed or not args.license_reviewed:
+        raise CatalogError(
+            "evaluated, privacy-reviewed, and license-reviewed flags are required"
+        )
+    case_id = checked_case_id(args.case_id)
+    evidence_ids = sorted(set(checked_evidence_ids(args.evidence_id)))
+    snapshot_id = checked_safe_id(args.snapshot_id, "snapshot_id")
+    evaluation_method = checked_text(
+        args.evaluation_method, "evaluation_method", 500
+    )
+    reason = checked_text(args.reason, "reason", 1000)
+    path = database_path(create=True)
+    connection = connect(path, writable=True, create=True)
+    now = utc_now()
+    try:
+        with transaction(connection):
+            existing = case_evaluation_row(connection, case_id)
+            if existing is not None:
+                replay = {
+                    "evidence_ids": evidence_ids,
+                    "snapshot_id": snapshot_id,
+                    "evaluation_method": evaluation_method,
+                    "reason": reason,
+                }
+                if any(existing[field] != value for field, value in replay.items()):
+                    raise CatalogError(
+                        "case evaluation is immutable and replay fields differ"
+                    )
+                return {
+                    "catalog_path": str(path),
+                    "evaluation": existing,
+                    "duplicate": True,
+                    "changed": False,
+                }
+            lesson_ids = [
+                row["lesson_id"]
+                for row in connection.execute(
+                    "SELECT DISTINCT lesson_id FROM observations "
+                    "WHERE case_id = ? ORDER BY lesson_id",
+                    (case_id,),
+                ).fetchall()
+            ]
+            result = "lesson-recorded" if lesson_ids else "no-eligible-lesson"
+            connection.execute(
+                "INSERT INTO case_evaluations "
+                "(case_id, result, lesson_ids_json, evidence_ids_json, snapshot_id, "
+                "evaluation_method, reason, privacy_reviewed, license_reviewed, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)",
+                (
+                    case_id,
+                    result,
+                    json.dumps(lesson_ids, ensure_ascii=False),
+                    json.dumps(evidence_ids, ensure_ascii=False),
+                    snapshot_id,
+                    evaluation_method,
+                    reason,
+                    now,
+                ),
+            )
+            evaluation = case_evaluation_row(connection, case_id)
+            return {
+                "catalog_path": str(path),
+                "evaluation": evaluation,
+                "duplicate": False,
+                "changed": True,
+            }
+    finally:
+        connection.close()
+
+
+def show_case(args: argparse.Namespace) -> dict[str, object]:
+    case_id = checked_case_id(args.case_id)
+    path = database_path(create=False)
+    connection = connect(path, writable=False)
+    try:
+        schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
+        if schema_version < 3:
+            return {
+                "catalog_path": str(path),
+                "case_id": case_id,
+                "evaluation": None,
+                "schema_upgrade_required": True,
+            }
+        return {
+            "catalog_path": str(path),
+            "case_id": case_id,
+            "evaluation": case_evaluation_row(connection, case_id),
+            "schema_upgrade_required": False,
+        }
     finally:
         connection.close()
 
@@ -1085,6 +1245,8 @@ def doctor(args: argparse.Namespace) -> dict[str, object]:
             "catalog_path": str(path),
             "schema_version": schema_version,
             "supported_schema": schema_version == SCHEMA_VERSION,
+            "readable_schema": schema_version in READABLE_SCHEMA_VERSIONS,
+            "migration_required": schema_version != SCHEMA_VERSION,
             "quick_check": quick_check,
             "foreign_key_issues": foreign_key_issues,
         }
@@ -1124,6 +1286,21 @@ def build_parser() -> argparse.ArgumentParser:
     observe_parser.add_argument("--high-risk-fix", action="store_true")
     add_verification_arguments(observe_parser)
 
+    finalize_parser = subparsers.add_parser(
+        "finalize-case",
+        help="record the mandatory post-inquiry experience eligibility evaluation",
+    )
+    finalize_parser.add_argument("--case-id", required=True)
+    finalize_parser.add_argument(
+        "--evidence-id", action="append", default=[], required=True
+    )
+    finalize_parser.add_argument("--snapshot-id", required=True)
+    finalize_parser.add_argument("--evaluation-method", required=True)
+    finalize_parser.add_argument("--reason", required=True)
+    finalize_parser.add_argument("--evaluated", action="store_true")
+    finalize_parser.add_argument("--privacy-reviewed", action="store_true")
+    finalize_parser.add_argument("--license-reviewed", action="store_true")
+
     list_parser = subparsers.add_parser("list", help="list catalog lessons")
     list_parser.add_argument("--status", choices=sorted(STATUSES))
     subparsers.add_parser(
@@ -1135,6 +1312,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     show_parser = subparsers.add_parser("show", help="show one lesson and audit history")
     show_parser.add_argument("--lesson-id", required=True)
+
+    show_case_parser = subparsers.add_parser(
+        "show-case", help="show one case experience-evaluation receipt"
+    )
+    show_case_parser.add_argument("--case-id", required=True)
 
     retire_parser = subparsers.add_parser("retire", help="deprecate or roll back a lesson")
     retire_parser.add_argument("--lesson-id", required=True)
@@ -1166,12 +1348,16 @@ def main() -> int:
             result = {"catalog_path": str(database_path(create=False))}
         elif args.command == "observe":
             result = observe(args)
+        elif args.command == "finalize-case":
+            result = finalize_case(args)
         elif args.command == "list":
             result = list_lessons(args)
         elif args.command == "load":
             result = load_lessons(args)
         elif args.command == "show":
             result = show_lesson(args)
+        elif args.command == "show-case":
+            result = show_case(args)
         elif args.command == "retire":
             result = retire(args)
         elif args.command == "resolve-conflict":

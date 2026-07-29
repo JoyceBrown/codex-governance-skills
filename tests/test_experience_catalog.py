@@ -109,6 +109,81 @@ class ExperienceCatalogTests(unittest.TestCase):
         self.assertEqual(result["after_status"], "Shadow")
         return str(result["lesson_id"])
 
+    def finalize_case(
+        self,
+        case_id: str,
+        *,
+        reason: str = "post-inquiry reusable-lesson eligibility evaluated",
+        expect_ok: bool = True,
+    ) -> dict[str, object]:
+        return self.run_cli(
+            "finalize-case",
+            "--case-id",
+            case_id,
+            "--evidence-id",
+            f"evidence:{case_id}:synthesis",
+            "--snapshot-id",
+            f"snapshot:{case_id}",
+            "--evaluation-method",
+            "deterministic eligibility review",
+            "--reason",
+            reason,
+            "--evaluated",
+            "--privacy-reviewed",
+            "--license-reviewed",
+            expect_ok=expect_ok,
+        )
+
+    def test_case_without_eligible_lesson_gets_auditable_receipt(self) -> None:
+        finalized = self.finalize_case("no-lesson-case")
+        self.assertEqual(
+            finalized["evaluation"]["result"], "no-eligible-lesson"
+        )
+        self.assertEqual(finalized["evaluation"]["lesson_ids"], [])
+        shown = self.run_cli("show-case", "--case-id", "no-lesson-case")
+        self.assertEqual(shown["evaluation"], finalized["evaluation"])
+        self.assertFalse(shown["schema_upgrade_required"])
+
+    def test_case_with_observation_finalizes_as_lesson_recorded(self) -> None:
+        observed = self.observe(case_id="recorded-case")
+        finalized = self.finalize_case("recorded-case")
+        self.assertEqual(finalized["evaluation"]["result"], "lesson-recorded")
+        self.assertEqual(
+            finalized["evaluation"]["lesson_ids"], [observed["lesson_id"]]
+        )
+
+    def test_finalized_case_is_idempotent_and_closed_to_observations(self) -> None:
+        first = self.finalize_case("closed-case")
+        second = self.finalize_case("closed-case")
+        self.assertFalse(first["duplicate"])
+        self.assertTrue(second["duplicate"])
+        self.assertFalse(second["changed"])
+        rejected = self.observe(case_id="closed-case", expect_ok=False)
+        self.assertIn("observations are closed", str(rejected["error"]))
+        mismatched = self.finalize_case(
+            "closed-case", reason="different replay", expect_ok=False
+        )
+        self.assertIn("replay fields differ", str(mismatched["error"]))
+
+    def test_v2_catalog_stays_readable_and_migrates_on_finalization(self) -> None:
+        observed = self.observe(case_id="v2-case", high_risk=True)
+        connection = sqlite3.connect(self.database)
+        try:
+            connection.executescript(
+                "DROP TABLE case_evaluations; PRAGMA user_version = 2;"
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        loaded = self.run_cli("load")
+        self.assertEqual(loaded["lessons"][0]["lesson_id"], observed["lesson_id"])
+        finalized = self.finalize_case("v2-case")
+        self.assertEqual(finalized["evaluation"]["result"], "lesson-recorded")
+        doctor = self.run_cli("doctor")
+        self.assertEqual(doctor["schema_version"], 3)
+        self.assertFalse(doctor["migration_required"])
+
     def test_out_of_order_observation_is_rejected(self) -> None:
         self.observe(case_id="candidate-1")
         result = self.observe(
@@ -364,7 +439,7 @@ class ExperienceCatalogTests(unittest.TestCase):
 
         migrated = self.run_cli("migrate")
         self.assertEqual(migrated["before_schema_version"], 1)
-        self.assertEqual(migrated["after_schema_version"], 2)
+        self.assertEqual(migrated["after_schema_version"], 3)
         shown = self.run_cli(
             "show", "--lesson-id", "0123456789abcdef01234567"
         )

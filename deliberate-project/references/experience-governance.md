@@ -16,7 +16,7 @@ Use this module to read reusable cross-project lessons before method routing and
 
 Resolve the catalog root from the host config file selected by `DELIBERATE_PROJECT_EXPERIENCE_CONFIG` or the default `CODEX_HOME/deliberate-project-experience-root.txt`, then `AEGOS_SKILLS_EXPERIENCE_ROOT`. The config file contains exactly one existing absolute directory path. The automated CLI accepts no `--root` override. Configuration authorizes only `scripts/experience_catalog.py` to create or update the fixed `deliberate-project/experience.sqlite3` catalog beneath that root; it authorizes no other external write.
 
-Only the primary agent may operate the catalog. Read-only operations may run after the case and focus profiles are stable and before method routing. Mutating operations may run only after the inquiry report is stable and only when the current request does not prohibit persistence or all writes. A configured root is an approved storage capability, not authority to override a current read-only instruction. Role agents return transient candidate material and never receive catalog write capability. If mutation is prohibited or the configured root is missing, invalid, or not writable, do not create a substitute location; continue without persistence and disclose the gap.
+Only the primary agent may operate the catalog. Read-only operations may run after the case and focus profiles are stable and before method routing. Mutating operations may run only after the inquiry report is stable and only when the current request does not prohibit persistence or all writes. At that point every activated inquiry must evaluate reusable-lesson eligibility. When the catalog is configured and writes are permitted, record each eligible observation and then run `finalize-case` exactly once; when none qualifies, `finalize-case` records `no-eligible-lesson`. A configured root is an approved storage capability, not authority to override a current read-only instruction. Role agents return transient candidate material and never receive catalog write capability. If mutation is prohibited or the configured root is missing, invalid, or not writable, perform the same evaluation transiently, do not create a substitute location, and disclose why no receipt could be persisted.
 
 ## Pre-inquiry Read Path
 
@@ -41,6 +41,17 @@ Before recording an observation, require:
 
 The CLI stores these attestations and exposes them through `show`. It cannot determine natural-language truth by itself; the primary remains responsible for establishing that the referenced evidence exists, entails the observation, and is safe to persist. Do not store hidden reasoning, role transcripts, credentials, absolute private project paths, or copied copyrighted content. Prefer hashes, public locators, or redacted local source IDs.
 
+### Mandatory Case Finalization
+
+Treat candidate extraction and case finalization as separate operations:
+
+1. After the inquiry report is stable, inspect the verified finding and judgment map for redacted, cross-project reusable lessons.
+2. Run `observe` for every item that satisfies all write gates. Do not invent a lesson merely to produce a write.
+3. Run `finalize-case` with the stable case ID, synthesis evidence ID, snapshot ID, evaluation method, and a redacted reason. The command derives `lesson-recorded` from observations already stored for that case; otherwise it derives `no-eligible-lesson`. The caller cannot choose the result.
+4. Treat the returned receipt as the terminal experience state for that case. Finalization is idempotent and closes the case to later observations. If a materially new inquiry is required, use a new case ID rather than rewriting the receipt.
+
+Do not send the final user response until the receipt is recorded, or until a transient evaluation and the exact persistence prohibition or catalog failure are included in the Inquiry record. This guarantees evaluation, not forced lesson creation.
+
 ## Legal Lifecycle
 
 The tool enforces event validity and legal transitions:
@@ -56,7 +67,7 @@ The tool enforces event validity and legal transitions:
 
 Different case IDs are necessary but not sufficient for independence. Observations that share any declared source locator belong to the same lineage component and receive one promotion credit. Mirrors, repeated fixtures, multiple URLs from one publisher, or evidence derived from the same upstream material must declare that shared lineage; renaming a source or evidence ID to evade this gate violates the catalog contract.
 
-Every accepted transition is appended inside the same database transaction. Version 1 catalogs migrate to version 2 without losing lessons or transition history. Migrated observations are labeled `Legacy-attested`: version 1 required privacy and licensing flags but did not retain the complete evidence attestation now required. They preserve existing status but do not count toward new promotion gates.
+Every accepted transition is appended inside the same database transaction. Older catalogs migrate to version 3 without losing lessons or transition history. Migrated version 1 observations are labeled `Legacy-attested`: version 1 required privacy and licensing flags but did not retain the complete evidence attestation now required. They preserve existing status but do not count toward new promotion gates.
 
 ## Conflict Resolution
 
@@ -81,12 +92,19 @@ python scripts/experience_catalog.py doctor
 python scripts/experience_catalog.py load
 python scripts/experience_catalog.py list
 python scripts/experience_catalog.py show --lesson-id <id>
+python scripts/experience_catalog.py show-case --case-id <case>
 ```
 
 Record a verified reusable observation after the report is stable:
 
 ```text
 python scripts/experience_catalog.py observe --case-id <case> --claim <redacted-lesson> --scope <scope> --version-scope <versions> --jurisdiction <market-or-na> --expires-at <YYYY-MM-DD> --recheck-trigger <trigger> --limitations <limits> --source <safe-locator> --evidence-id <verified-id> --snapshot-id <safe-snapshot-id> --verification-method <method> --outcome candidate --verified --privacy-reviewed --license-reviewed
+```
+
+Finalize the mandatory eligibility evaluation after all qualifying observations:
+
+```text
+python scripts/experience_catalog.py finalize-case --case-id <case> --evidence-id <synthesis-evidence-id> --snapshot-id <safe-snapshot-id> --evaluation-method <method> --reason <redacted-reason> --evaluated --privacy-reviewed --license-reviewed
 ```
 
 Use `shadow-benefit`, `shadow-regression`, or `conflict` only in a state that accepts that outcome. A conflict also requires `--related-lesson-id`. Use `--high-risk-fix` only with a verified candidate observation for a demonstrated high-risk workflow defect.
@@ -102,6 +120,7 @@ Always disclose:
 - whether read or write operations were attempted and the resolved catalog path or failure reason;
 - lesson IDs loaded and the subset actually applied;
 - lesson ID, before/after/effective status, case ID, outcome, duplicate/change result, and evidence IDs for a write;
+- final case-evaluation result, receipt case ID, lesson IDs, evidence IDs, and duplicate/change result, or the exact reason only a transient evaluation was possible;
 - whether a conflict, resolution, expiry, rollback, migration, or retirement occurred;
 - any `Legacy-attested` record used only as a Shadow suggestion.
 

@@ -116,6 +116,16 @@ class SkillContractTests(unittest.TestCase):
         self.assertIn("current request does not prohibit persistence", SKILL_TEXT)
         self.assertIn("never overrides the current user's read-only", SKILL_TEXT)
 
+    def test_every_inquiry_must_finalize_experience_eligibility(self) -> None:
+        for phrase in (
+            "every activated inquiry must evaluate reusable-lesson eligibility",
+            "run `finalize-case` exactly once",
+            "`lesson-recorded` or `no-eligible-lesson`",
+            "Do not invent a lesson to force a write",
+            "post-report experience-evaluation result",
+        ):
+            self.assertIn(phrase, SKILL_TEXT)
+
 
 if __name__ == "__main__":
     unittest.main()
