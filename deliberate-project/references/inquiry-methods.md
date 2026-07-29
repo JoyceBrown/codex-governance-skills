@@ -7,6 +7,7 @@ Use this catalog to compose a bounded inquiry portfolio. Select methods because 
 - [Prompt and requirement focus extraction](#prompt-and-requirement-focus-extraction)
 - [Case continuity and comparison](#case-continuity-and-comparison)
 - [Selection procedure](#selection-procedure)
+- [Lightweight sentinel screen](#lightweight-sentinel-screen)
 - [Observation angles](#observation-angles)
 - [Reasoning methods](#reasoning-methods)
 - [Conditional specialist methods](#conditional-specialist-methods)
@@ -77,7 +78,7 @@ Do not treat a diff as complete evidence of the resulting system. Do not run cha
 
 For each priority judgment area:
 
-1. Derive the area from the focus profile, case profile, domain-critical conditions, prior material findings when applicable, and project evidence; record which signal justified its priority.
+1. Derive the area from the focus profile, case profile, coverage ledger, sentinel results, domain-critical conditions, prior material findings when applicable, and project evidence; record which signal justified its priority.
 2. Classify the judgment as factual, causal, predictive, feasibility, normative, comparative, preference, or recommendation.
 3. Identify consequence, uncertainty, reversibility, affected actors, lifecycle stages, system boundaries, and evidence modalities.
 4. Select the smallest set of angles and methods likely to produce distinct findings.
@@ -86,6 +87,23 @@ For each priority judgment area:
 7. Mark a material dimension without a usable method as `Coverage-limited`.
 
 Prefer one method from several distinct families over several near-duplicates from one family. Do not run the whole catalog.
+
+## Lightweight Sentinel Screen
+
+Run one bounded sentinel screen after the breadth map and before specialist routing. This is a trigger check, not eight full reviews. Record `Positive`, `Negative-with-evidence`, `Unknown`, or `Not-applicable` for each domain:
+
+```text
+security_privacy_and_authorization
+reliability_and_recovery
+human_factors_accessibility_and_misuse
+data_quality_models_and_measurement
+dependencies_supply_chain_and_provenance
+governance_legal_licensing_and_economics
+capacity_cost_and_resources
+lifecycle_migration_compatibility_and_external_effects
+```
+
+Base a negative result on inspected project evidence, not missing keywords. Treat hidden data flow, generic component names, indirect downloads, external effects, model-backed scoring, generated artifacts, and absent accessibility or recovery documentation as possible quiet triggers. Route `Positive` and high-consequence `Unknown` results to the closest applicable specialist method or a supplementary domain probe. If no viable method or modality exists, create a coverage gap. Do not run every specialist method merely to clear the screen, and do not treat a completed sentinel as professional domain assurance.
 
 ## Observation Angles
 

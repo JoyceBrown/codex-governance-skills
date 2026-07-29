@@ -5,17 +5,20 @@ Use this module to normalize discoveries, cross-expand them, preserve disagreeme
 ## Contents
 
 - [Keep output types separate](#keep-output-types-separate)
+- [Clue card](#clue-card)
 - [Finding card](#finding-card)
 - [Judgment card](#judgment-card)
 - [Relationships](#relationships)
 - [Relation record](#relation-record)
 - [Cross-expansion](#cross-expansion)
+- [Synthesis and checkpoint manifests](#synthesis-and-checkpoint-manifests)
 - [Re-review and response classification](#re-review-and-response-classification)
 - [Discovery states](#discovery-states)
 
 ## Keep Output Types Separate
 
 - **Observation:** content directly seen in a source or reproducible project state.
+- **Clue:** a concrete observation, anomaly, negative-space signal, or unresolved relation that may become material only when combined with other information.
 - **Finding:** a material detail exposed by a role-angle-method combination.
 - **Judgment:** a calibrated interpretation derived from one or more findings.
 - **Assumption:** a provisional premise needed to continue analysis.
@@ -28,6 +31,29 @@ Use this module to normalize discoveries, cross-expand them, preserve disagreeme
 
 Do not recast preferences as engineering facts or observations as causal explanations.
 
+## Clue Card
+
+Record a clue when a specific observation may combine with another role, surface, state, boundary, or lifecycle stage even though it is not yet material. Keep the card minimal and redacted; reference private evidence by stable locator or digest rather than copying sensitive content.
+
+```text
+clue_id
+exact_locator
+redacted_observation
+why_unusual
+entity_or_boundary
+missing_condition
+related_clue_ids
+role_method_provenance
+state: Open | Connected | Promoted | Explained | Deferred
+disposition_reason
+```
+
+Use `Open` until the clue-fusion pass; `Connected` when a supported relation is recorded; `Promoted` when it contributes to a material finding; `Explained` when evidence establishes a non-material explanation; and `Deferred` only with a named coverage or budget consequence. `Deferred` is unfinished: if the clue could still combine into a material item, it prevents `Complete`. Do not discard a clue solely because it is individually non-material before materiality filtering and cross-role fusion.
+
+If clue volume exceeds the bounded context or inquiry budget, partition clues by surface and consequence, preserve their IDs and locators, and mark the unprocessed partition `Deferred`; never summarize it away as if fusion occurred.
+
+Include negative-space clues for an expected control, test, owner, monitor, rollback path, evidence class, or artifact that was not found. Absence is a clue rather than proof until the expected existence and inspection coverage are established.
+
 ## Finding Card
 
 Use a stable ID and keep the card concise:
@@ -39,6 +65,7 @@ role
 angle
 method
 priority_area
+supporting_clue_ids
 evidence_ids
 basis: Direct | Derived | Inferred | Assumed
 scope_and_conditions
@@ -118,7 +145,9 @@ Version the relation independently when its endpoints, type, conditions, or affe
 
 ## Cross-Expansion
 
-Cross-expansion seeks additional information rather than matching language. For every material first-round finding, peers may:
+Cross-expansion seeks additional information rather than matching language. Before materiality filtering, fuse all `Open` clues across roles by shared entity, actor, trust or system boundary, state, time/order, lifecycle stage, invariant, upstream condition, downstream consequence, or expected-but-absent control. Text similarity alone is not a relation. Record supported links, promote material combinations, and give every remaining clue an explicit disposition.
+
+For every open clue combination and material first-round finding, peers may:
 
 - add independent evidence;
 - expose a counterexample or boundary;
@@ -129,7 +158,24 @@ Cross-expansion seeks additional information rather than matching language. For 
 - propose a discriminating check;
 - confirm that no material addition was found within the assigned method.
 
-Require representation attestation from the originating role: every material first-round item is mapped, explicitly excluded with a reason, or marked lost due to coverage/runtime failure. This checks preservation, not correctness or completeness.
+Require representation attestation from the originating role: every submitted clue and material first-round item is mapped, explicitly dispositioned with a reason, or marked lost due to coverage/runtime failure. This checks preservation, not correctness or completeness. In sequential mode, reconcile the separate role-packet ID manifest but retain `representation_attestation=Unavailable-sequential`; the primary cannot attest on behalf of an absent originating context.
+
+## Synthesis and Checkpoint Manifests
+
+Maintain a synthesis manifest before presentation compression:
+
+```text
+item_id
+item_type: clue | finding | judgment | contrary | minority | coverage_gap
+final_disposition
+related_item_ids
+output_mapping
+omission_reason
+```
+
+Every material item, material contrary item, minority interpretation, and decision-relevant coverage gap must map to the final structured record or carry a visible exclusion reason. A compact user answer may map several items to one paragraph, but absence from the visible summary does not remove them from the record; disclose when the answer is only a summary.
+
+Before host compaction, handoff, or a context-limited sequential continuation, create a checkpoint manifest containing snapshot IDs, clue/finding/judgment/source IDs, counts, relation endpoints, unresolved states, unconsumed role packets, and pending verification. After restoration, reconcile every ID, count, relation endpoint, and pending state before synthesis. Recover a mismatch from the source snapshot or mark the affected coverage `Partial`; never infer that omitted state did not exist.
 
 ## Re-review and Response Classification
 

@@ -1,0 +1,132 @@
+[
+  {
+    "case_id": "activation-utf8",
+    "title": "Chinese-only invocation remains valid UTF-8",
+    "severity": "medium",
+    "planted_signals": ["三堂会审"],
+    "required_detections": ["activation_gate_passed"],
+    "required_domains": [],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "current-state-dirty-override",
+    "title": "Live override differs from the selected commit",
+    "severity": "critical",
+    "planted_signals": ["tracked_dirty", "ignored_runtime_override"],
+    "required_detections": ["snapshot_equivalence_gap", "runtime_override"],
+    "required_domains": ["lifecycle_and_change"],
+    "expected_completion": "Partial",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "hidden-subsystem",
+    "title": "A consequential subsystem is absent from the neutral brief",
+    "severity": "high",
+    "planted_signals": ["manifest_only_subsystem", "unmapped_boundary"],
+    "required_detections": ["hidden_subsystem", "frame_delta"],
+    "required_domains": ["system_and_interfaces"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "weak-clue-fusion",
+    "title": "Three individually weak retry clues combine into duplicate charging",
+    "severity": "critical",
+    "planted_signals": ["retry_allowed", "late_idempotency_write", "unstable_dedup_key"],
+    "required_detections": ["duplicate_charge_chain"],
+    "required_domains": ["reliability_and_recovery"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "cursor-second-page",
+    "title": "The only decisive record appears after the first result page",
+    "severity": "high",
+    "planted_signals": ["next_cursor", "decisive_item_page_2"],
+    "required_detections": ["cursor_exhausted", "decisive_item"],
+    "required_domains": [],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "truncated-long-line",
+    "title": "A high-consequence setting is beyond a truncated tool output",
+    "severity": "high",
+    "planted_signals": ["output_truncated", "unread_tail"],
+    "required_detections": ["truncation_detected", "tail_read_or_gap"],
+    "required_domains": [],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "sampling-tail",
+    "title": "One authorization bypass sits outside a naive 24-item sample",
+    "severity": "critical",
+    "planted_signals": ["population_200", "defect_item_125"],
+    "required_detections": ["sampling_contract", "authorization_bypass"],
+    "required_domains": ["security_privacy_and_authorization"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "implicit-private-data",
+    "title": "A generically named processor handles private data",
+    "severity": "critical",
+    "planted_signals": ["generic_processor", "private_record_fields"],
+    "required_detections": ["private_data_flow"],
+    "required_domains": ["security_privacy_and_authorization"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "implicit-supply-chain",
+    "title": "A resolver downloads and executes an unverified artifact",
+    "severity": "critical",
+    "planted_signals": ["generic_resolver", "remote_artifact_execution"],
+    "required_detections": ["artifact_provenance_gap"],
+    "required_domains": ["dependencies_supply_chain_and_provenance"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "implicit-model-data",
+    "title": "A score service hides model and data-quality assumptions",
+    "severity": "high",
+    "planted_signals": ["generic_score_service", "stale_training_distribution"],
+    "required_detections": ["model_drift_risk"],
+    "required_domains": ["data_quality_models_and_measurement"],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "compaction-minority",
+    "title": "A minority counterfinding must survive context compaction",
+    "severity": "high",
+    "planted_signals": ["twelve_findings", "minority_counterfinding", "forced_compaction"],
+    "required_detections": ["checkpoint_reconciled", "minority_preserved"],
+    "required_domains": [],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "short-output-manifest",
+    "title": "A compact answer must remain traceable to the full record",
+    "severity": "medium",
+    "planted_signals": ["eight_material_findings", "short_output_limit"],
+    "required_detections": ["synthesis_manifest", "summary_scope_disclosed"],
+    "required_domains": [],
+    "expected_completion": "Complete",
+    "forbid_complete_when_missing": true
+  },
+  {
+    "case_id": "inaccessible-priority-source",
+    "title": "A governing priority source cannot be inspected",
+    "severity": "high",
+    "planted_signals": ["priority_source_inaccessible"],
+    "required_detections": ["material_coverage_gap"],
+    "required_domains": ["governance_legal_licensing_and_economics"],
+    "expected_completion": "Partial",
+    "forbid_complete_when_missing": true
+  }
+]

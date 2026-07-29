@@ -14,6 +14,11 @@ ALL_CONTRACT_TEXT = SKILL_TEXT + ROUTING_TEXT
 
 
 class SkillContractTests(unittest.TestCase):
+    def test_core_skill_stays_within_progressive_disclosure_budget(self) -> None:
+        self.assertLessEqual(len(SKILL_TEXT.splitlines()), 500)
+        words = re.findall(r"\b[\w-]+\b", SKILL_TEXT, flags=re.UNICODE)
+        self.assertLessEqual(len(words), 5000)
+
     def test_explicit_activation_is_aligned_across_metadata(self) -> None:
         self.assertIn("Proceed only when", SKILL_TEXT)
         self.assertRegex(
@@ -89,10 +94,11 @@ class SkillContractTests(unittest.TestCase):
         for phrase in (
             "fork_turns=none",
             "project writes, experience-catalog operations, centralized verification",
-            "every priority area was responsibly examined",
-            "rather than a substitute for coverage",
+            "every discovered material surface and priority area is coverage-closed",
+            "whose material surface is silently absent",
             "required role contribution",
             "only material source remains inaccessible",
+            "transport completeness is unknown",
         ):
             self.assertIn(phrase, SKILL_TEXT)
 

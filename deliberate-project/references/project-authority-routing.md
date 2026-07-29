@@ -1,8 +1,34 @@
-# Project authority and conclusion routing
+# Project boundary, authority, and conclusion routing
 
-Use this module when an inquiry must explain where a conclusion belongs or whether anyone has authority to decide or act on it. The module adds a governance lens to the read-only inquiry; it does not install bootstrap conventions or modify project artifacts.
+Use the snapshot section whenever current-state or delta evidence must be bound to the project the user actually named. Use the remaining sections when an inquiry must explain where a conclusion belongs or whether anyone has authority to decide or act on it. The module adds boundary and governance controls to the read-only inquiry; it does not install bootstrap conventions or modify project artifacts.
 
-## Activation
+## Snapshot equivalence
+
+A stable snapshot is useful only when it represents the requested state. Record the target as `Commit`, `Live-worktree`, `Frozen-copy`, `Export`, `Deployed-state`, or `Manifest-bound`, then establish `snapshot_equivalence=Verified | Qualified | Unverified | Not-applicable` before treating it as current evidence.
+
+For a current-state or delta boundary, inspect the applicable sources of divergence rather than assuming a clean commit is the whole project:
+
+- tracked modifications and staged changes;
+- relevant untracked and ignored overrides without exposing secrets or indiscriminately opening every ignored file;
+- submodule revisions, LFS placeholders, symlink targets, generated artifacts, vendored material, and build outputs when they can change behavior;
+- deployment manifests, environment-specific configuration, feature flags, migrations, external state, and runtime version/configuration when the user asks about deployed or operational behavior.
+
+Keep a compact snapshot-equivalence record:
+
+```text
+requested_state
+selected_snapshot
+included_state_classes
+excluded_state_classes
+divergence_checks
+material_divergences
+snapshot_equivalence
+residual_gap
+```
+
+Use `Verified` only when material divergence paths were checked and the selected snapshot represents the requested state. Use `Qualified` when known exclusions are bounded and do not affect the claim. Use `Unverified` when a plausible material divergence path remains unresolved. A current-state priority area with `snapshot_equivalence=Unverified` is not responsibly examined and requires `Partial`; do not bind all roles to a stable but potentially wrong commit and call their agreement corroboration.
+
+## Authority activation
 
 Read this module when at least one signal exists:
 

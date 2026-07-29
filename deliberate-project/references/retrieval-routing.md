@@ -9,6 +9,7 @@ Use this module when a selected inquiry method needs evidence that is not alread
 - [Capability discovery](#capability-discovery)
 - [Selection procedure](#selection-procedure)
 - [Provider-specific handling](#provider-specific-handling)
+- [Sampling and transport completeness](#sampling-and-transport-completeness)
 - [Multi-route verification](#multi-route-verification)
 - [Failure and fallback](#failure-and-fallback)
 - [Retrieval record](#retrieval-record)
@@ -129,6 +130,16 @@ Use a browser only when static retrieval cannot expose required dynamic, rendere
 
 Use crawl or extraction capabilities only for a bounded set of pages with a declared purpose and stop condition. Check authorization, robots or terms where applicable, licensing, retention, volume, and duplicate lineage before expanding the crawl.
 
+## Sampling and Transport Completeness
+
+Declare a sampling contract whenever a project-internal or external population is too large for complete inspection and the sample will support a judgment. Record the population definition and size when knowable, inclusion and exclusion rules, strata or risk classes, selection method and stable seed/order, abnormal or boundary samples, inspected count, remaining count, known selection bias, and the inference limit. A convenient first page, filename order, ranking cutoff, or tool maximum is not a sampling method. If the population or selection bias cannot be bounded, label the area `Coverage-limited` and do not generalize beyond the inspected items.
+
+For each decision-relevant route, distinguish the requested retrieval scope from the transport actually received. Detect pagination, continuation cursors, host or UI truncation, byte/line limits, omitted binary or generated content, and result-count caps before treating the output as complete.
+
+An exhaustive claim requires cursor exhaustion or an equivalent end-of-population proof, count/range reconciliation, and no unresolved truncation. Targeted retrieval may stop after the method's stated evidence requirement is satisfied, but it must record the unread remainder and limit the claim to the observed range. Do not fetch irrelevant pages merely to exhaust a cursor; either narrow the retrieval scope or preserve the remainder as an explicit coverage boundary.
+
+If output is truncated, continue with pagination, range reads, or smaller bounded requests. If continuation is unavailable or unsafe, set `completeness_qualification=Incomplete`, create a coverage gap, and prevent `Complete` for an affected priority claim. Unknown transport completeness is not evidence that the result set ended.
+
 ## Multi-Route Verification
 
 One strong direct source is usually better than several search-result summaries. Add another route when it can:
@@ -179,10 +190,19 @@ source_origin_and_lineage
 revision_date_or_snapshot
 authorization_identity_and_egress
 fallback_or_failure
+retrieval_scope
+expected_count
+returned_count
+page_count
+cursor_state
+output_truncated
+byte_or_line_range
+unread_remainder
+completeness_qualification
 result_fingerprint
 route_qualification
 source_evidence_grade
 resulting_evidence_ids
 ```
 
-Store only a redacted representation or digest of decision-relevant query terms and parameters. Do not log secrets, raw private queries, private page content, or irrelevant lookup history. Stop retrieval when the method's evidence requirement is satisfied, a discriminating check resolves the material conflict, remaining routes have low expected information value, or a hard boundary or bounded budget requires an explicit coverage gap.
+Store only a redacted representation or digest of decision-relevant query terms and parameters. Do not log secrets, raw private queries, private page content, or irrelevant lookup history. Use `Unknown` or `Not-applicable` rather than inventing counts that the operation does not expose. Stop retrieval when the declared scope is reconciled, a targeted method's evidence requirement is satisfied with its unread boundary recorded, a discriminating check resolves the material conflict, remaining routes have low expected information value, or a hard boundary or bounded budget requires an explicit coverage gap.

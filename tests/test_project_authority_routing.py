@@ -13,6 +13,18 @@ REFERENCE_TEXT = (
 
 
 class ProjectAuthorityRoutingContractTests(unittest.TestCase):
+    def test_snapshot_equivalence_binds_current_state(self) -> None:
+        for phrase in (
+            "snapshot_equivalence=Verified | Qualified | Unverified | Not-applicable",
+            "tracked modifications and staged changes",
+            "untracked and ignored overrides",
+            "submodule revisions, LFS placeholders",
+            "deployment manifests",
+            "requires `Partial`",
+        ):
+            self.assertIn(phrase, REFERENCE_TEXT)
+        self.assertIn("snapshot-equivalence section", SKILL_TEXT)
+
     def test_skill_routes_only_matching_authority_signals(self) -> None:
         self.assertIn("references/project-authority-routing.md", SKILL_TEXT)
         self.assertIn("competing roadmap, plan, status", SKILL_TEXT)
