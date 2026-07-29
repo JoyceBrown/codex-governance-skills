@@ -96,6 +96,8 @@ Select optional modules independently from the output profile. A Standard projec
 
 Enable the solo-software delivery module when the user is shaping a first release, asks whether a product or milestone is ready to advance, needs an evidence-based reuse-versus-build decision, is preparing a release, or must decide whether to continue, simplify, pivot, or stop. Read `references/solo-software-delivery.md` completely before proposing lifecycle gates or delivery artifacts. Do not enable it for an ordinary isolated bug fix, explanation, or implementation request merely because the repository is software.
 
+Enable the change-review module only when an audit has a real baseline or prior review record, the inspected tree may drift during a consequential review, or a material architecture, reuse, release, or direction judgment needs stronger evidence handling. Read `references/change-review.md` completely before declaring comparison or review completion. Do not enable it for greenfield work, a routine short documentation refresh, or ordinary implementation. It governs review coverage only; it never invokes a multi-role deliberation workflow or changes task, plan, release, or project completion.
+
 Enable the planning-authority module only when at least one signal exists:
 
 - work must survive context resets or multiple sessions
@@ -263,6 +265,7 @@ Do not claim the project is fully configured when commands, deployment, security
   effective-state, or blast-radius signals.
 - Read `references/experience-learning.md` when capturing, reviewing, applying, retiring, or promoting experience across projects.
 - Read `references/solo-software-delivery.md` when validating a product problem, defining an MVP or first vertical slice, comparing reuse with custom implementation, assessing stage readiness, preparing a release, or deciding whether to continue, simplify, pivot, or stop.
+- Read `references/change-review.md` for a named baseline, prior review record, live-tree drift, consequential evidence comparison, or namespaced review-completion reporting.
 - Read `references/skill-design-principles.md` only when maintaining this Skill or applying its design principles to another Skill.
 - Read `references/surface-guide.md` only when deciding where information belongs or whether advanced Codex surfaces are justified.
 - Read `references/design-sources.md` only when maintaining this skill or explaining how its design relates to existing open-source approaches.
