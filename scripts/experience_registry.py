@@ -15,15 +15,33 @@ from pathlib import Path
 from typing import Any
 
 
+SCHEMA_VERSION = 2
 SCOPES = {"project_specific", "project_family", "cross_project"}
-STATUSES = {"candidate", "accepted_local", "promoted", "rejected", "retired"}
+STATUSES = {
+    "candidate",
+    "shadow",
+    "active",
+    "conflicted",
+    "rolled_back",
+    "promoted",
+    "rejected",
+    "retired",
+}
 CAPTURE_MODES = {"off", "ask", "auto_sanitized"}
 SEVERITIES = {"low", "medium", "high", "critical"}
+OUTCOME_KINDS = {"shadow_benefit", "regression", "conflict"}
 PATTERN_ID_RE = re.compile(r"^EXP-\d{8}-[0-9a-f]{8}(?:-\d+)?$")
 REVIEW_TRANSITIONS = {
-    ("candidate", "accept"): "accepted_local",
+    ("candidate", "accept"): "active",
+    ("shadow", "accept"): "active",
+    ("conflicted", "accept"): "active",
     ("candidate", "reject"): "rejected",
-    ("accepted_local", "retire"): "retired",
+    ("shadow", "reject"): "rejected",
+    ("conflicted", "reject"): "rejected",
+    ("active", "retire"): "retired",
+    ("shadow", "retire"): "retired",
+    ("conflicted", "retire"): "retired",
+    ("rolled_back", "retire"): "retired",
     ("promoted", "retire"): "retired",
 }
 SECRET_PATTERNS = (
@@ -107,6 +125,43 @@ def candidate_fingerprint(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def migrate_record(record: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Return a schema-v2 record without discarding schema-v1 audit metadata."""
+    version = record.get("schema_version")
+    if version == SCHEMA_VERSION:
+        return dict(record), False
+    if version != 1:
+        raise ValueError("unsupported experience record schema")
+
+    migrated = dict(record)
+    old_status = migrated.get("status")
+    if old_status == "accepted_local":
+        migrated["status"] = "active"
+    elif old_status not in STATUSES:
+        raise ValueError("invalid experience record status")
+    migrated["schema_version"] = SCHEMA_VERSION
+    migrated.setdefault("outcomes", [])
+    migrated.setdefault("lifecycle", {"transitions": []})
+    migrated["migration"] = {
+        "from_schema": 1,
+        "legacy_status": old_status,
+        "migrated_at": migrated.get("last_seen_at") or migrated.get("created_at"),
+    }
+    if old_status == "accepted_local":
+        migrated["lifecycle"]["transitions"].append(
+            {
+                "from": "accepted_local",
+                "to": "active",
+                "reason": "Schema-v1 locally accepted experience preserved as active",
+                "trigger": "schema_migration",
+                "at": migrated.get("review", {}).get("reviewed_at")
+                if isinstance(migrated.get("review"), dict)
+                else migrated.get("last_seen_at"),
+            }
+        )
+    return migrated, True
+
+
 def validate_record(record: dict[str, Any]) -> None:
     required_strings = (
         "pattern_id",
@@ -123,7 +178,7 @@ def validate_record(record: dict[str, Any]) -> None:
     for key in required_strings:
         if not isinstance(record.get(key), str) or not record[key]:
             raise ValueError(f"invalid experience record field: {key}")
-    if record.get("schema_version") != 1:
+    if record.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("unsupported experience record schema")
     if not PATTERN_ID_RE.fullmatch(record["pattern_id"]):
         raise ValueError("invalid experience pattern ID")
@@ -149,6 +204,23 @@ def validate_record(record: dict[str, Any]) -> None:
         raise ValueError("invalid experience review metadata")
     if record.get("promotion") is not None and not isinstance(record["promotion"], dict):
         raise ValueError("invalid experience promotion metadata")
+    lifecycle = record.get("lifecycle")
+    if not isinstance(lifecycle, dict) or not isinstance(lifecycle.get("transitions"), list):
+        raise ValueError("invalid experience lifecycle metadata")
+    outcomes = record.get("outcomes")
+    if not isinstance(outcomes, list):
+        raise ValueError("invalid experience outcomes")
+    for outcome in outcomes:
+        if not isinstance(outcome, dict) or outcome.get("kind") not in OUTCOME_KINDS:
+            raise ValueError("invalid experience outcome")
+        if not isinstance(outcome.get("summary"), str) or not outcome["summary"]:
+            raise ValueError("invalid experience outcome summary")
+        outcome_project = outcome.get("project_fingerprint")
+        if outcome_project is not None and not (
+            isinstance(outcome_project, str)
+            and re.fullmatch(r"[0-9a-f]{16}", outcome_project)
+        ):
+            raise ValueError("invalid experience outcome project fingerprint")
     conflicts = record.get("conflicts_with", [])
     if not isinstance(conflicts, list) or not all(
         isinstance(item, str) and PATTERN_ID_RE.fullmatch(item) for item in conflicts
@@ -207,6 +279,7 @@ def load_records(store: Path) -> list[dict[str, Any]]:
             raise ValueError(f"cannot read experience record {path.name}: {exc}") from exc
         if not isinstance(data, dict):
             raise ValueError(f"experience record is not an object: {path.name}")
+        data, _ = migrate_record(data)
         validate_record(data)
         if data["pattern_id"] != path.stem:
             raise ValueError(f"experience record ID does not match filename: {path.name}")
@@ -313,7 +386,8 @@ def capture(
         )[:20]
         record["reproduced"] = bool(record.get("reproduced")) or reproduced
         write_record(store, record)
-        return record, False
+        audit_registry(store)
+        return find_record(store, record["pattern_id"]), False
 
     short_hash = fingerprint[:8]
     pattern_id = f"EXP-{datetime.now(timezone.utc):%Y%m%d}-{short_hash}"
@@ -325,7 +399,7 @@ def capture(
         suffix += 1
 
     record: dict[str, Any] = {
-        "schema_version": 1,
+        "schema_version": SCHEMA_VERSION,
         "pattern_id": pattern_id,
         "status": "candidate",
         "scope": scope,
@@ -346,17 +420,20 @@ def capture(
         "fingerprint": fingerprint,
         "review": None,
         "promotion": None,
+        "outcomes": [],
+        "lifecycle": {"transitions": []},
         "conflicts_with": [],
         "superseded_by": None,
     }
     record["conflicts_with"] = sorted(
         item["pattern_id"]
         for item in records
-        if item.get("status") in {"candidate", "accepted_local", "promoted"}
+        if item.get("status") in {"candidate", "shadow", "active", "promoted"}
         and records_conflict(record, item)
     )
     write_record(store, record)
-    return record, True
+    audit_registry(store)
+    return find_record(store, record["pattern_id"]), True
 
 
 def find_record(store: Path, pattern_id: str) -> dict[str, Any]:
@@ -364,6 +441,239 @@ def find_record(store: Path, pattern_id: str) -> dict[str, Any]:
         if record.get("pattern_id") == pattern_id:
             return record
     raise ValueError(f"unknown pattern ID: {pattern_id}")
+
+
+def transition_record(
+    record: dict[str, Any],
+    target: str,
+    *,
+    reason: str,
+    trigger: str,
+) -> dict[str, Any] | None:
+    source = record["status"]
+    if source == target:
+        return None
+    record["status"] = target
+    event = {
+        "from": source,
+        "to": target,
+        "reason": sanitize(reason, 600),
+        "trigger": trigger,
+        "at": utc_now(),
+    }
+    record.setdefault("lifecycle", {"transitions": []})["transitions"].append(event)
+    return {"pattern_id": record["pattern_id"], **event}
+
+
+def qualifies_for_shadow(record: dict[str, Any]) -> bool:
+    independent_projects = len(set(record.get("project_fingerprints", [])))
+    evidence_count = len(set(record.get("evidence_summaries", [])))
+    severe_reproduced = (
+        record.get("severity") in {"high", "critical"}
+        and bool(record.get("reproduced"))
+        and evidence_count >= 2
+    )
+    return independent_projects >= 2 or severe_reproduced
+
+
+def benefit_project_count(record: dict[str, Any]) -> int:
+    return len(
+        {
+            item.get("project_fingerprint")
+            for item in record.get("outcomes", [])
+            if item.get("kind") == "shadow_benefit" and item.get("project_fingerprint")
+        }
+    )
+
+
+def audit_registry(store: Path) -> dict[str, Any]:
+    """Apply deterministic private lifecycle transitions and persist schema upgrades."""
+    records = load_records(store)
+    by_id = {record["pattern_id"]: record for record in records}
+    transitions: list[dict[str, Any]] = []
+
+    for record in records:
+        kinds = {item.get("kind") for item in record.get("outcomes", [])}
+        if "regression" in kinds and record["status"] in {
+            "shadow",
+            "active",
+            "conflicted",
+        }:
+            event = transition_record(
+                record,
+                "rolled_back",
+                reason="Observed regression withdrew this local experience",
+                trigger="observed_regression",
+            )
+            if event:
+                transitions.append(event)
+        elif "conflict" in kinds and record["status"] in {"candidate", "shadow", "active"}:
+            event = transition_record(
+                record,
+                "conflicted",
+                reason="Observed contradiction requires evidence comparison",
+                trigger="observed_conflict",
+            )
+            if event:
+                transitions.append(event)
+
+    for record in records:
+        if record["status"] == "candidate" and qualifies_for_shadow(record):
+            event = transition_record(
+                record,
+                "shadow",
+                reason="Independent or severe reproduced evidence met the Shadow gate",
+                trigger="automatic_audit",
+            )
+            if event:
+                transitions.append(event)
+
+    live_statuses = {"candidate", "shadow", "active"}
+    processed_pairs: set[tuple[str, str]] = set()
+    for record in records:
+        if record["status"] not in live_statuses:
+            continue
+        for conflict_id in record.get("conflicts_with", []):
+            other = by_id.get(conflict_id)
+            if not other:
+                continue
+            pair = tuple(sorted((record["pattern_id"], conflict_id)))
+            if pair in processed_pairs:
+                continue
+            processed_pairs.add(pair)
+            if other["status"] == "promoted":
+                event = transition_record(
+                    record,
+                    "conflicted",
+                    reason=f"Conflicts with promoted Skill rule {conflict_id}",
+                    trigger="promoted_rule_conflict",
+                )
+                if event:
+                    transitions.append(event)
+                continue
+            if other["status"] not in live_statuses:
+                continue
+            if "active" not in {record["status"], other["status"]} and "shadow" not in {
+                record["status"],
+                other["status"],
+            }:
+                continue
+            for item, counterpart in ((record, other), (other, record)):
+                if item["status"] in live_statuses:
+                    event = transition_record(
+                        item,
+                        "conflicted",
+                        reason=f"Direct contradiction with {counterpart['pattern_id']} was quarantined",
+                        trigger="automatic_conflict_quarantine",
+                    )
+                    if event:
+                        transitions.append(event)
+
+    for record in records:
+        if record["status"] == "shadow" and benefit_project_count(record) >= 2:
+            event = transition_record(
+                record,
+                "active",
+                reason="Two independent post-Shadow benefits validated local use",
+                trigger="automatic_audit",
+            )
+            if event:
+                transitions.append(event)
+
+    for record in records:
+        write_record(store, record)
+
+    refreshed = load_records(store)
+    promotion_ready = [
+        record_summary(record)
+        for record in refreshed
+        if assess_promotion(record)["eligible_for_promotion_review"]
+    ]
+    return {
+        "transitions": transitions,
+        "promotion_ready": promotion_ready,
+        "pending_evidence": [
+            record_summary(record)
+            for record in refreshed
+            if record["status"] in {"candidate", "shadow"}
+        ],
+        "quarantined": [
+            record_summary(record)
+            for record in refreshed
+            if record["status"] in {"conflicted", "rolled_back"}
+        ],
+    }
+
+
+def observe_outcome(
+    store: Path,
+    *,
+    pattern_id: str,
+    kind: str,
+    summary: str,
+    project_root: str | Path | None = None,
+) -> dict[str, Any]:
+    if kind not in OUTCOME_KINDS:
+        raise ValueError(f"invalid outcome kind: {kind}")
+    record = find_record(store, pattern_id)
+    if kind == "shadow_benefit" and record["status"] not in {"shadow", "active"}:
+        raise ValueError("shadow benefit can be recorded only for shadow or active experience")
+    project_id = project_fingerprint(project_root)
+    if kind == "shadow_benefit" and not project_id:
+        raise ValueError("shadow benefit requires project_root for independence evidence")
+    clean_summary = sanitize(summary, 600)
+    if not clean_summary:
+        raise ValueError("outcome summary is required")
+    outcome = {
+        "kind": kind,
+        "summary": clean_summary,
+        "project_fingerprint": project_id,
+        "observed_at": utc_now(),
+    }
+    identity = (kind, clean_summary.lower(), project_id)
+    existing = {
+        (
+            item.get("kind"),
+            item.get("summary", "").lower(),
+            item.get("project_fingerprint"),
+        )
+        for item in record.get("outcomes", [])
+    }
+    created = identity not in existing
+    if created:
+        record.setdefault("outcomes", []).append(outcome)
+        write_record(store, record)
+    audit = audit_registry(store)
+    return {
+        "created": created,
+        "record": record_summary(find_record(store, pattern_id)),
+        "audit": audit,
+    }
+
+
+def finalize_run(store: Path, *, run_summary: str = "") -> dict[str, Any]:
+    audit = audit_registry(store)
+    if audit["transitions"]:
+        outcome = "lifecycle-updated"
+    elif audit["promotion_ready"]:
+        outcome = "formal-promotion-ready"
+    elif audit["quarantined"]:
+        outcome = "attention-quarantined"
+    elif audit["pending_evidence"]:
+        outcome = "evidence-pending"
+    else:
+        outcome = "no-eligible-experience"
+    receipt = {
+        "schema_version": 1,
+        "finalized_at": utc_now(),
+        "outcome": outcome,
+        "run_summary": sanitize(run_summary, 600) if run_summary else "",
+        **audit,
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%f")
+    receipt_path = store / "receipts" / f"RUN-{stamp}.json"
+    write_private_json(receipt_path, receipt)
+    return {**receipt, "receipt": str(receipt_path)}
 
 
 def review(
@@ -410,7 +720,7 @@ def review(
         required_supersession = {
             conflict_id
             for conflict_id in conflict_ids
-            if records_by_id.get(conflict_id, {}).get("status") == "accepted_local"
+            if records_by_id.get(conflict_id, {}).get("status") in {"active", "conflicted"}
         }
         if requested_supersession != required_supersession:
             raise ValueError(
@@ -419,7 +729,12 @@ def review(
             )
         for conflict_id in sorted(requested_supersession):
             previous = records_by_id[conflict_id]
-            previous["status"] = "retired"
+            transition_record(
+                previous,
+                "retired",
+                reason=f"Superseded by {record['pattern_id']}: {clean_reason}",
+                trigger="manual_review",
+            )
             previous["superseded_by"] = record["pattern_id"]
             previous["review"] = {
                 "decision": "retire",
@@ -427,7 +742,12 @@ def review(
                 "reviewed_at": utc_now(),
             }
             write_record(store, previous)
-    record["status"] = REVIEW_TRANSITIONS[transition]
+    transition_record(
+        record,
+        REVIEW_TRANSITIONS[transition],
+        reason=clean_reason,
+        trigger="manual_review",
+    )
     record["review"] = {
         "decision": decision,
         "reason": clean_reason,
@@ -451,7 +771,7 @@ def relevant(
     matches: list[tuple[int, dict[str, Any]]] = []
 
     for record in load_records(store):
-        if record.get("status") != "accepted_local":
+        if record.get("status") not in {"active", "shadow"}:
             continue
         scope = record.get("scope")
         record_types = set(record.get("project_types", []))
@@ -484,6 +804,7 @@ def relevant(
             "project_types": record.get("project_types", []),
             "occurrence_count": record.get("occurrence_count", 1),
             "independent_project_count": len(record.get("project_fingerprints", [])),
+            "use_mode": "apply_advisory" if record.get("status") == "active" else "verify_only",
         }
         for _, record in matches
     ]
@@ -499,7 +820,7 @@ def assess_promotion(record: dict[str, Any]) -> dict[str, Any]:
         and evidence_count >= 2
     )
     gates = {
-        "accepted_for_local_use": record.get("status") == "accepted_local",
+        "active_for_local_use": record.get("status") == "active",
         "not_project_specific": record.get("scope") != "project_specific",
         "has_matching_signals": bool(record.get("signals")),
         "has_generalization_evidence": repeated or severe_reproduced,
@@ -512,7 +833,7 @@ def assess_promotion(record: dict[str, Any]) -> dict[str, Any]:
         "eligible_for_promotion_review": all(
             gates[key]
             for key in (
-                "accepted_for_local_use",
+                "active_for_local_use",
                 "not_project_specific",
                 "has_matching_signals",
                 "has_generalization_evidence",
@@ -538,8 +859,8 @@ def mark_promoted(
     assessment = assess_promotion(record)
     if not assessment["eligible_for_promotion_review"]:
         raise ValueError("promotion gates are not satisfied")
-    if record["status"] != "accepted_local":
-        raise ValueError("only accepted_local experience can be promoted")
+    if record["status"] != "active":
+        raise ValueError("only active experience can be promoted")
     if not user_approved:
         raise ValueError("promotion requires current explicit user approval")
     clean_approval = sanitize(approval_note, 600)
@@ -557,7 +878,12 @@ def mark_promoted(
     passed_marker = re.compile(r"(?i)(?:\bpassed\b|\bexit(?:_code)?\s*=\s*0\b)")
     if not all(passed_marker.search(item) for item in clean_forward + clean_regression):
         raise ValueError("each promotion test must include a passed or exit=0 result")
-    record["status"] = "promoted"
+    transition_record(
+        record,
+        "promoted",
+        reason=clean_approval,
+        trigger="authorized_skill_promotion",
+    )
     record["promotion"] = {
         "targets": clean_targets,
         "forward_tests": clean_forward,
@@ -573,13 +899,13 @@ def mark_promoted(
 def load_config(store: Path) -> dict[str, Any]:
     path = store / "config.json"
     if not path.exists():
-        return {"capture_mode": "ask"}
+        return {"capture_mode": "auto_sanitized"}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {"capture_mode": "ask"}
+        return {"capture_mode": "auto_sanitized"}
     mode = data.get("capture_mode")
-    return {"capture_mode": mode if mode in CAPTURE_MODES else "ask"}
+    return {"capture_mode": mode if mode in CAPTURE_MODES else "auto_sanitized"}
 
 
 def configure(store: Path, capture_mode: str) -> dict[str, str]:
@@ -603,6 +929,17 @@ def record_summary(record: dict[str, Any]) -> dict[str, Any]:
         "independent_project_count": len(record.get("project_fingerprints", [])),
         "conflicts_with": record.get("conflicts_with", []),
         "superseded_by": record.get("superseded_by"),
+        "outcome_counts": {
+            kind: sum(1 for item in record.get("outcomes", []) if item.get("kind") == kind)
+            for kind in sorted(OUTCOME_KINDS)
+        },
+        "use_mode": (
+            "apply_advisory"
+            if record.get("status") == "active"
+            else "verify_only"
+            if record.get("status") == "shadow"
+            else "none"
+        ),
         "last_seen_at": record.get("last_seen_at"),
     }
 
@@ -645,8 +982,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--supersedes",
         action="append",
         default=[],
-        help="Accepted local pattern ID retired by this conflicting candidate",
+        help="Active local pattern ID retired by this conflicting candidate",
     )
+
+    observe_parser = subparsers.add_parser("observe")
+    observe_parser.add_argument("pattern_id")
+    observe_parser.add_argument(
+        "--kind",
+        choices=("shadow-benefit", "regression", "conflict"),
+        required=True,
+    )
+    observe_parser.add_argument("--summary", required=True)
+    observe_parser.add_argument("--project-root")
+
+    subparsers.add_parser("audit")
+
+    finalize_parser = subparsers.add_parser("finalize")
+    finalize_parser.add_argument("--run-summary", default="")
 
     relevant_parser = subparsers.add_parser("relevant")
     relevant_parser.add_argument("--project-root")
@@ -711,6 +1063,18 @@ def main() -> int:
                     supersedes=args.supersedes,
                 )
             )
+        elif args.command == "observe":
+            result = observe_outcome(
+                store,
+                pattern_id=args.pattern_id,
+                kind=args.kind.replace("-", "_"),
+                summary=args.summary,
+                project_root=args.project_root,
+            )
+        elif args.command == "audit":
+            result = audit_registry(store)
+        elif args.command == "finalize":
+            result = finalize_run(store, run_summary=args.run_summary)
         elif args.command == "relevant":
             result = relevant(
                 store,

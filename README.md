@@ -58,7 +58,7 @@ Codex 约束     -> 根或必要的嵌套 AGENTS.md
 | 层级 | 负责什么 | 能否直接约束项目 |
 | --- | --- | --- |
 | Codex Memories | 帮助回忆用户偏好、近期工作和重复背景 | 不能作为必须执行规则的唯一来源 |
-| 私有经验候选库 | 保存脱敏、结构化、可审查的问题与改进方案 | 只有用户批准且与当前项目匹配时才能作为建议 |
+| 私有经验注册表 | 自动保存脱敏证据、影子验证、局部启用、隔离冲突和回滚 | Shadow 仅用于验证；Active 匹配当前项目时可作为建议 |
 | 版本化 Skill | 保存已经泛化、验证并有回归测试的通用能力 | 可以按 Skill 路由规则稳定执行 |
 
 项目自身的硬规则仍然必须写入项目的 `AGENTS.md`、docs、代码、测试或活动计划。即使个人经验库丢失，项目也不能因此失去关键约束。
@@ -68,17 +68,18 @@ Codex 约束     -> 根或必要的嵌套 AGENTS.md
 ```text
 真实问题或用户纠正
     -> 脱敏候选 candidate
-    -> 用户审查 accepted_local / rejected
-    -> 在匹配的新项目中小范围验证
-    -> 跨项目重复或严重问题复现
+    -> 两个独立项目，或严重问题复现 -> shadow
+    -> 在匹配的新项目中仅作验证建议
+    -> 两个独立的实际收益 -> active
+    -> 冲突自动隔离 / 回归自动撤回
     -> 前向测试 + 反例 + 回归测试
     -> 用户授权后更新 Skill
     -> promoted
 ```
 
-候选经验默认不会影响其他项目。只有 `accepted_local` 状态的经验，才会在项目类型和风险信号匹配时作为建议出现。已经进入 Skill 的 `promoted` 经验不会再次注入上下文，避免重复。
+`candidate` 不影响其他项目；`shadow` 只能提示验证方法；`active` 才能在类型、范围、风险信号和当前仓库证据都匹配时作为建议。`conflicted` 与 `rolled_back` 自动停止使用。已经进入 Skill 的 `promoted` 经验不会再次注入上下文，避免重复。
 
-### 为什么不能完全自动升级
+### 哪些自动，哪些仍需授权
 
 不同项目经常给出相反答案：
 
@@ -87,7 +88,7 @@ Codex 约束     -> 根或必要的嵌套 AGENTS.md
 - 某个项目需要严格计划权限，小项目可能只需要 README 和一个 `AGENTS.md`；
 - 用户的一次个人偏好，不等于所有用户和所有项目的最佳实践。
 
-因此 Skill 可以自动发现、脱敏、去重和累计证据，但不能自动批准、修改自己、提交或推送。最后的泛化判断和公开发布必须可审查。
+因此私有注册表会自动发现、脱敏、去重、审核证据、进入 Shadow、晋升 Active、隔离冲突和回滚退化，不需要用户逐条管理。只有把经验写入版本化 Skill、提交或推送这一层需要一次明确授权；私有经验不会暗中改写正式规则。
 
 ### 私有经验存放位置
 
@@ -112,8 +113,8 @@ python "<skill-dir>\scripts\experience_registry.py" config
 | 模式 | 行为 |
 | --- | --- |
 | `off` | 不发现、不保存经验候选 |
-| `ask` | 发现真实可复用问题后先询问用户；默认模式 |
-| `auto_sanitized` | 调用本 Skill 且识别到真实摩擦时自动保存脱敏候选，但仍不能自动批准或升级 Skill |
+| `ask` | 发现真实可复用问题后先询问用户 |
+| `auto_sanitized` | 默认模式；识别到真实摩擦时自动保存并审核私有生命周期，但不修改或发布正式 Skill |
 
 切换为自动保存脱敏候选：
 
@@ -121,14 +122,14 @@ python "<skill-dir>\scripts\experience_registry.py" config
 python "<skill-dir>\scripts\experience_registry.py" configure --capture-mode auto_sanitized
 ```
 
-通常由 Skill 替用户操作登记工具。需要人工检查时，可以使用：
+通常由 Skill 自动操作，任务结束时运行 `finalize` 并留下私有回执；没有合格经验时也会记录 `no-eligible-experience`。用户无需逐条管理：
 
 ```text
-# 查看未审查候选
-python "<skill-dir>\scripts\experience_registry.py" list --status candidate
+# 任务结束时自动审核、迁移并写入回执
+python "<skill-dir>\scripts\experience_registry.py" finalize --run-summary "本次任务的脱敏摘要"
 
-# 批准一条本地经验
-python "<skill-dir>\scripts\experience_registry.py" review EXP-20260726-1234abcd --decision accept --reason "已确认适用于具有重复文档权威冲突的项目"
+# 记录 Shadow 在独立项目中的实际收益；第二个独立收益会自动晋升 Active
+python "<skill-dir>\scripts\experience_registry.py" observe EXP-20260726-1234abcd --kind shadow-benefit --summary "验证发现并避免了重复权威" --project-root <project-root>
 
 # 检查它是否具备进入 Skill 的基础证据
 python "<skill-dir>\scripts\experience_registry.py" assess EXP-20260726-1234abcd
@@ -139,7 +140,7 @@ python "<skill-dir>\scripts\experience_registry.py" mark-promoted EXP-20260726-1
 
 `assess` 只检查机械门槛，不会修改 Skill，也不会替用户批准发布。
 
-若新候选针对同一问题和适用范围提出不同做法，工具会列出 `conflicts_with`，但不会按“较新”自动覆盖。接受替代方案时必须使用 `review ... --decision accept --supersedes <旧记录 ID>` 明确退役所有冲突的本地已接受经验。已经晋升进版本化 Skill 的经验不能在私有库里暗中覆盖，必须重新修改 Skill、做正向与回归测试并获得发布授权。
+若新候选针对同一问题和适用范围提出不同做法，工具会列出 `conflicts_with` 并自动隔离已经可复用的冲突项，不会按“较新”自动覆盖。无法靠证据确定时，它留在隔离区并批量报告；已经晋升进版本化 Skill 的经验绝不能在私有库里覆盖。
 
 详细规则见 [`references/experience-learning.md`](references/experience-learning.md)。
 

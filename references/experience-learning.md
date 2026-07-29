@@ -1,194 +1,165 @@
 # Experience learning and promotion
 
-Use this module when the user asks the Skill to remember a lesson, improve from project experience, review recurring failures, or promote a local lesson into the public Skill.
+Use this module when the Skill has a private learning registry, the user asks it to remember or improve, or a run produces real reusable friction.
 
-## Contents
+## Goal and authority boundary
 
-- [Goal](#goal)
-- [Private registry](#private-registry)
-- [Capture rule](#capture-rule)
-- [Review before reuse](#review-before-reuse)
-- [Resolve old and new conflicts](#resolve-old-and-new-conflicts)
-- [Apply accepted local patterns](#apply-accepted-local-patterns)
-- [Promote into the Skill](#promote-into-the-skill)
-- [Anti-drift rules](#anti-drift-rules)
-- [Periodic maintenance](#periodic-maintenance)
-
-## Goal
-
-Make future project bootstraps better without turning memory, one project's preferences, or an unverified anecdote into a universal rule.
+Improve later project work without asking the user to administer individual lessons and without turning one anecdote into a universal rule.
 
 Use three layers:
 
 ```text
-Codex Memories
-    -> optional recall; never the only source for required behavior
+Private registry
+    -> automatic sanitized capture, evidence audit, Shadow, Active, quarantine, rollback
 
-Private experience registry
-    -> structured, sanitized candidates and locally accepted patterns
+Project authority
+    -> verified requirements in that project's docs, code, tests, or active plan
 
-Skill rules, references, templates, scripts, and tests
-    -> curated behavior that passed promotion review
+Version-controlled Skill
+    -> curated behavior changed and published only with explicit user authorization
 ```
 
-Project requirements still belong in that project's `AGENTS.md`, documentation, code, tests, or active plan. Do not make a project depend on the private registry.
+The private lifecycle is automatic. It may change local registry status, but it must not edit this Skill, commit, push, publish, or override project evidence. Codex Memories are optional recall and never the only owner of required behavior.
 
 ## Private registry
 
-Resolve `<skill-dir>` to the directory containing `SKILL.md`. The deterministic registry tool is:
+Resolve `<skill-dir>` to the directory containing `SKILL.md`. The deterministic tool is:
 
 ```text
 python "<skill-dir>/scripts/experience_registry.py"
 ```
 
-By default it stores generated state under:
+The default store is `<CODEX_HOME>/learning/bootstrap-codex-project/`, or the normal user Codex home when `CODEX_HOME` is unset. It is private local state and must not enter a public repository.
 
-```text
-<CODEX_HOME>/learning/bootstrap-codex-project/
-```
+Capture modes:
 
-When `CODEX_HOME` is unset, use the normal user Codex home. The store is private local state and is never part of the public Skill repository. The tool uses private file permissions where the operating system supports them and atomic replacement for records. This reduces accidental exposure and partial writes; it does not make a shared or compromised user account confidential.
+- `auto_sanitized` is the default. Capture only generalized structured summaries after real failures or user corrections.
+- `ask` requires current confirmation through `--confirm-capture`.
+- `off` rejects capture.
 
-Supported capture modes:
+This is not a background monitor. It runs only when this Skill is active. Automatic redaction is defense in depth, not permission to store raw transcripts, source code, client identifiers, repository paths, credentials, personal data, or long logs.
 
-- `off`: never propose or save experience candidates.
-- `ask`: detect reusable friction and ask before saving a sanitized candidate. This is the default.
-- `auto_sanitized`: during runs that use this Skill, automatically save only structured, sanitized candidates after a real failure or user correction; still require review before use.
-
-The CLI enforces the mode. `off` rejects capture. In `ask`, pass `--confirm-capture` only after the current user has agreed to save that candidate.
-
-This is not a background monitor. It does not observe unrelated development tasks where the Skill is not active.
-
-Read the current mode:
-
-```text
-python "<skill-dir>/scripts/experience_registry.py" config
-```
-
-Change it only when the user requests:
-
-```text
-python "<skill-dir>/scripts/experience_registry.py" configure --capture-mode ask
-```
-
-## Capture rule
+## Capture eligibility
 
 Capture only when at least one concrete signal exists:
 
-- the user corrected the Skill's project classification or output
+- the user corrected the Skill's classification, decision, or output
 - Codex repeated a mistake that existing rules should have prevented
-- a generated file caused real confusion or unnecessary ceremony
-- a validator missed a reproducible structural error
-- a project exposed a new, reusable boundary or failure mode
-- the user explicitly asks to remember or learn from the case
+- a generated artifact caused real confusion or unnecessary ceremony
+- a validator missed a reproduced structural error
+- a project exposed a reusable boundary or failure mode
+- the user explicitly asked the Skill to remember the case
 
-Do not capture generic preferences, speculation, praise, raw transcripts, source code, client names, repository paths, credentials, personal data, or long logs.
+Record the generalized problem, observed failure, preferred response, scope, matching signals, sanitized evidence summaries, severity, and reproduction state. The tool deduplicates equivalent records, counts occurrences, and stores one-way project fingerprints rather than project paths.
 
-Automatic redaction covers common tokens, credentials in URLs, secret assignments, private-key blocks, email addresses, and user-home paths, but cannot reliably detect every client name or sensitive business fact. Always write a generalized summary; never use redaction as permission to submit raw material. Malformed records fail closed instead of being silently ignored.
+Do not manufacture a lesson merely because a run completed. A final receipt may say `no-eligible-experience`.
 
-Record:
+## Automatic lifecycle
 
-- the problem in general terms
-- the observed failure
-- the preferred behavior
-- scope: `project_specific`, `project_family`, or `cross_project`
-- matching project types and observable signals
-- sanitized evidence summaries
-- severity and whether the failure was reproduced
+The registry uses these states:
 
-`project_specific` requires a project root and is deduplicated only inside that project. `project_family` requires a project type. Reusable scopes require at least one observable matching signal, so an empty-signal record cannot match every project.
+```text
+candidate
+    -> shadow       enough independent or severe reproduced evidence
+    -> conflicted   a contradiction reaches a reusable state
+    -> rejected     explicit exceptional review
 
-The tool deduplicates equivalent candidates, increments occurrence counts, and stores only a one-way project fingerprint instead of the project path.
+shadow
+    -> active       benefits observed in two independent projects
+    -> conflicted   direct or observed contradiction
+    -> rolled_back  observed regression
 
-## Review before reuse
+active
+    -> conflicted   contradiction is quarantined
+    -> rolled_back  observed regression
+    -> promoted     formal Skill update passed every gate and was authorized
+```
 
-A new record has `status: candidate` and cannot influence another project.
+`retired`, `rejected`, `rolled_back`, and `promoted` records are not automatically reactivated. Schema-v1 `accepted_local` records migrate to `active` while preserving review and promotion metadata.
 
-Review it with the user:
+Automatic gates:
 
-- `accept` -> `accepted_local`; it may be suggested only when scope and signals match.
-- `reject` -> `rejected`; keep it as evidence that the idea was considered.
-- `retire` -> `retired`; stop applying an older accepted pattern.
+1. `candidate -> shadow` after evidence from at least two independent project fingerprints, or after a reproduced high/critical failure with at least two distinct evidence summaries.
+2. Shadow advice is `verify_only`: use it to check a hypothesis or method, never as established project guidance.
+3. Record a `shadow-benefit` only when repository evidence shows the Shadow suggestion helped. Two distinct project fingerprints promote it to `active`.
+4. `active` advice is `apply_advisory`: it still requires matching scope, signals, current repository evidence, and the latest user instruction.
+5. A `regression` outcome automatically moves Shadow or Active experience to `rolled_back`.
+6. A direct or observed contradiction moves reusable local patterns to `conflicted`. Do not resolve semantic ambiguity by recency or occurrence count.
+7. A local conflict with `promoted` experience quarantines the local record and never overrides the version-controlled Skill rule.
 
-Transitions are one-way: only a candidate can be accepted or rejected, and only an accepted or promoted record can be retired. Retired and rejected records cannot be reactivated by changing a review decision.
+The capture and outcome commands run the deterministic audit immediately. `audit` safely rechecks every record and persists schema upgrades; repeated audits do not repeat a completed transition.
 
-Never auto-accept a candidate. When several candidates are pending, summarize them in plain language instead of asking the user to understand registry fields.
+## Observe outcomes
 
-## Resolve old and new conflicts
+Record only outcomes supported by the current project's evidence:
 
-When a new candidate describes the same normalized problem in the same scope, overlaps the same project or matching signals, and recommends a different response, the tool records `conflicts_with`. This catches direct contradictions; it is not semantic proof that differently worded lessons agree.
+```text
+python "<skill-dir>/scripts/experience_registry.py" observe <pattern-id> --kind shadow-benefit --summary "<sanitized observed benefit>" --project-root <project-root>
 
-Do not use recency alone. Compare source quality, current repository evidence, platform version, applicability, and observed outcomes. Reject the weaker candidate, or accept the replacement with `--supersedes <old-pattern-id>`. Acceptance is blocked until every conflicting `accepted_local` record is explicitly superseded; those older records become `retired` and point to the replacement. A local review cannot supersede a `promoted` record, because the version-controlled Skill and its tests must be changed through the full promotion process.
+python "<skill-dir>/scripts/experience_registry.py" observe <pattern-id> --kind regression --summary "<sanitized regression>" --project-root <project-root>
 
-## Apply accepted local patterns
+python "<skill-dir>/scripts/experience_registry.py" observe <pattern-id> --kind conflict --summary "<sanitized contradiction>" --project-root <project-root>
+```
 
-After inspecting a new project and identifying its type and risk signals, query relevant accepted patterns:
+Equivalent outcomes are idempotent. `shadow-benefit` requires a project root so one project cannot masquerade as independent validation.
+
+## Apply local experience
+
+After identifying the project type and concrete risk signals, query relevant experience:
 
 ```text
 python "<skill-dir>/scripts/experience_registry.py" relevant --project-root <project-root> --project-type <type> --signal <signal>
 ```
 
-Use the result as advisory context:
+For every result:
 
-1. Check that the current repository evidence actually matches.
-2. Ignore any pattern that conflicts with the latest user instruction or authoritative project facts.
-3. Apply only the smallest relevant adjustment.
-4. Put required behavior into this project's authoritative files or tests.
-5. Do not mention internal IDs unless the user asks for the learning audit trail.
+1. Respect `use_mode`: Shadow is verification-only; Active is advisory.
+2. Confirm the scope and signals against current repository evidence.
+3. Ignore it when it conflicts with the latest user instruction or authoritative project facts.
+4. Apply the smallest relevant adjustment.
+5. Put required project behavior in that project's authoritative files or tests.
+6. Do not expose internal IDs unless the user asks for the audit trail.
 
-`project_specific` patterns apply only to the same project fingerprint. `project_family` patterns require a matching project type and signal. `cross_project` patterns always require matching signals.
+Promoted records are excluded because their behavior is already version-controlled. Conflicted and rolled-back records are never recommendations.
+
+## Mandatory end-of-run finalization
+
+At the end of a run that loaded this module, execute:
+
+```text
+python "<skill-dir>/scripts/experience_registry.py" finalize --run-summary "<short sanitized result>"
+```
+
+Finalization audits all pending records and writes a private receipt with one outcome:
+
+- `lifecycle-updated`
+- `formal-promotion-ready`
+- `attention-quarantined`
+- `evidence-pending`
+- `no-eligible-experience`
+
+Do not ask the user to inspect or decide each record. Report only a compact batch when formal Skill candidates are ready, a conflict cannot be safely resolved, or the user requests the audit trail.
 
 ## Promote into the Skill
 
-Promotion means changing the version-controlled Skill, not merely accepting a local candidate.
+Private `active` status is not formal Skill promotion. Formal promotion requires all of these:
 
-Require all of these gates:
+- the record is `active`, is not project-specific, and has observable matching signals
+- independent generalization evidence exists
+- the proposed rule states both its positive and negative trigger boundaries
+- no private detail is needed to understand it
+- representative forward tests and counterexamples pass
+- regression tests pass
+- the user explicitly authorizes the Skill update and any publication
 
-- the candidate is already `accepted_local`
-- it is not `project_specific`
-- it has observable matching signals
-- it occurred in at least two independent projects, or it is a reproduced high/critical failure with at least two evidence summaries
-- the proposed rule states when it applies and when it does not
-- no private project details are needed to understand it
-- realistic forward tests cover representative projects and counterexamples
-- regression tests protect existing behavior
-- the user explicitly authorizes the Skill update and any GitHub publication
+`assess <pattern-id>` checks mechanical readiness only. It never grants permission. `mark-promoted` additionally requires `--user-approved`, a meaningful approval note, targets, and passed forward and regression evidence.
 
-Run `assess <pattern-id>` to inspect the mechanical gates. The result never constitutes approval.
+Choose the smallest target: recurring decisions in `SKILL.md`, conditional guidance in `references/`, repeated structures in `assets/templates/`, and deterministic checks in `scripts/` plus tests. Keep one-project rules in that project.
 
-Choose the smallest promotion target:
+Never auto-edit `SKILL.md`, auto-commit, auto-push, or auto-publish from a local record. Formal promotion is the single remaining user authorization boundary.
 
-| Learned behavior | Promotion target |
-| --- | --- |
-| Core decision used in nearly every run | `SKILL.md` |
-| Conditional project-family guidance | a routed file under `references/` |
-| Repeated output structure | `assets/templates/` |
-| Deterministic detection or enforcement | `scripts/` plus tests |
-| One project's rule | that project's `AGENTS.md`, docs, code, or tests; do not promote |
+## Exceptional manual controls
 
-After implementation, forward testing, regression testing, local Skill synchronization, and user-authorized publication, mark the record promoted with its target artifacts and regression tests. Promoted records are excluded from local recommendations to avoid injecting duplicate context.
+Normal use is automatic. `review` remains only for recovery, explicit rejection or retirement, and evidence-based resolution of a quarantined contradiction. A replacement must name every superseded local record. It cannot supersede `promoted` experience.
 
-The `mark-promoted` command requires `--user-approved`, an approval note that names the approved change, at least one `--forward-test`, and at least one `--regression-test`. Every recorded test item must include a result such as `passed` or `exit=0`; filenames alone are not test evidence. Set `--user-approved` only from explicit authorization in the current task.
-
-## Anti-drift rules
-
-- Do not let Codex Memories silently change Skill behavior.
-- Do not read or edit generated memory files as the Skill's primary control surface.
-- Do not auto-edit `SKILL.md`, auto-commit, auto-push, or auto-publish from a captured candidate.
-- Do not promote because a request sounds broadly useful.
-- Do not use occurrence count without checking independent projects and causality.
-- Do not solve every lesson with another instruction; prefer tests or scripts for mechanically detectable failures.
-- Do not grow `SKILL.md` indefinitely. Merge overlapping rules, retire obsolete guidance, and keep conditional detail in routed references.
-- Do not preserve a pattern forever. Retire it when platform behavior, tooling, or project evidence changes.
-
-## Periodic maintenance
-
-When the user asks for a learning review:
-
-1. List pending candidates and accepted local patterns.
-2. Merge semantic duplicates without deleting evidence.
-3. Reject project-specific noise misclassified as general.
-4. Test whether older patterns still match current Codex behavior.
-5. Promote only candidates that pass all gates.
-6. Retire stale or harmful patterns.
-7. Report what changed, what stayed local, and why.
+When several items need attention, batch them in plain language. Compare source quality, current repository evidence, platform version, applicability, causality, and observed outcomes; never ask the user to manage registry fields one by one.

@@ -41,7 +41,7 @@ Infer the mode without asking when the situation is clear:
 
 For an existing repository, resolve `<skill-dir>` to the directory containing this `SKILL.md`, then run `python "<skill-dir>/scripts/inspect_project.py" <project-root>` before proposing files. Treat its output as evidence, then read only the relevant files it identifies. If `scan.complete` is false, rerun with a higher limit or perform targeted reads before inferring that something is absent. Do not infer commands, frameworks, paths, or architecture from naming alone.
 
-After identifying the project type and concrete risk signals, read `references/experience-learning.md` when a private learning registry exists or the user asks the Skill to remember, learn, review experience, or improve itself. Query only locally accepted patterns that match the current project. Treat them as advisory until repository evidence confirms them.
+After identifying the project type and concrete risk signals, read `references/experience-learning.md` when a private learning registry exists or the user asks the Skill to remember, learn, review experience, or improve itself. Query only matching Shadow or Active patterns. Treat Shadow as verification-only and Active as advisory until repository evidence confirms it. When this module is loaded, finalize its private audit before reporting the run.
 
 ## Run the workflow
 
@@ -122,10 +122,10 @@ never broaden scope or side-effect permission.
 Enable experience learning independently from the output profile:
 
 - `off`: do not capture or suggest experience candidates.
-- `ask`: point out a reusable lesson after real friction and ask before saving a sanitized candidate; use this default.
-- `auto_sanitized`: save structured, sanitized candidates after real failures or user corrections, but never accept or promote them automatically.
+- `ask`: point out a reusable lesson after real friction and require current confirmation before saving it.
+- `auto_sanitized`: use this default; save structured, sanitized candidates after real failures or user corrections, then automatically audit their private lifecycle.
 
-The registry tool enforces these modes: `off` rejects writes and `ask` requires a current confirmation flag. Sanitization is defense in depth, not proof that arbitrary text is safe; summarize structurally and inspect uncertain content before capture. When a new candidate conflicts with accepted local experience, compare evidence and explicitly supersede the older record; never use recency alone or locally override a promoted Skill rule. Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
+The registry tool enforces these modes: `off` rejects writes and `ask` requires a current confirmation flag. Sanitization is defense in depth, not proof that arbitrary text is safe; summarize structurally and inspect uncertain content before capture. The private lifecycle automatically moves evidence through Candidate, Shadow, Active, conflict quarantine, and rollback. It never resolves semantic ambiguity by recency alone, never locally overrides a promoted Skill rule, and never edits or publishes the formal Skill. Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
 
 ### 5. Present the artifact plan
 
@@ -163,7 +163,7 @@ Apply these ownership rules:
   completion, priority basis, and delivery evidence in `PLANS.md`; put failed
   attempts, changed strategy, verified blockers, artifact identity, and
   repository state in `docs/work/current.md`.
-- When an accepted local experience changes required behavior for this project, write the verified result into the project's canonical owner. Never make project correctness depend on a private user registry or Codex Memory.
+- When Active local experience changes required behavior for this project, write the verified result into the project's canonical owner. Never make project correctness depend on a private user registry or Codex Memory.
 - Add a nested `AGENTS.md` only when that subtree has materially different commands, constraints, ownership, or risk.
 - Do not create `PLANS.md`, `docs/roadmap.md`, or `docs/work/current.md` as an inseparable bundle. Create only the artifacts justified by the project, but make their authority explicit whenever more than one exists.
 
@@ -207,8 +207,9 @@ Then verify:
 - a new task can recover active work from repository artifacts, while a subagent receives an explicit bounded task packet
 - a named handoff target was resolved before creating another task, and any claimed capability blocker has current evidence
 - no subagent or task packet silently acquires roadmap, scope, or completion authority
-- every applied local experience matches current repository evidence and project scope
-- no unreviewed experience candidate, generated memory, private path, secret, or raw transcript became project guidance
+- every applied local experience matches current repository evidence and project scope; Shadow experience remained verification-only
+- no Candidate, Conflicted, Rolled-back, generated memory, private path, secret, or raw transcript became project guidance
+- when experience learning was loaded, finalization produced a private receipt even when no eligible experience existed
 - every promoted experience has user approval, forward-test evidence, and a regression test
 - advanced surfaces have passed syntax checks plus a separate semantic review of permissions, side effects, trust boundaries, and disable/recovery behavior
 - nested `AGENTS.md` files add local information instead of duplicating the root
@@ -231,6 +232,8 @@ Summarize:
 - validation performed
 - decisions still requiring the user
 
+When experience learning was loaded, run its `finalize` command before this report. Do not surface routine registry administration; mention only formal-promotion-ready items, unresolved quarantines that affect the result, or an audit trail the user requested.
+
 Do not claim the project is fully configured when commands, deployment, security, or external integrations remain unverified.
 
 ## Guardrails
@@ -248,9 +251,9 @@ Do not claim the project is fully configured when commands, deployment, security
 - Do not assume a new task, fork, or subagent automatically knows the active objective, exclusions, acceptance criteria, or latest user decision.
 - Do not let a subagent reclassify requirements, change plan authority, broaden scope, or claim whole-project completion. A formal task takeover uses the new-task handoff contract instead of a subagent packet.
 - Do not treat Codex Memories as the source of required project or Skill behavior.
-- Do not let an unreviewed candidate influence another project.
+- Do not let Candidate, Conflicted, or Rolled-back experience influence another project; Shadow may suggest verification only.
 - Do not capture raw transcripts, source code, client identifiers, repository paths, credentials, personal data, or long logs in the experience registry.
-- Do not auto-edit this Skill, auto-commit, auto-push, or auto-publish an experience. Promotion requires explicit user authorization and normal Skill validation.
+- Do not auto-edit this Skill, auto-commit, auto-push, or auto-publish an experience. The private registry may auto-promote to Active, but formal Skill promotion requires explicit user authorization and normal Skill validation.
 - Do not grow the Skill for every correction. Keep project-specific lessons in the project, route conditional patterns to references, and use scripts or tests for mechanical failures.
 - Do not force planning IDs, roadmaps, checkpoints, or strict governance onto projects that do not need them.
 - Do not initialize Git, commit, push, deploy, or install packages unless the user requested that broader action.

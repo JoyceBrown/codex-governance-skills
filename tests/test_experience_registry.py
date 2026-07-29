@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from experience_registry import (  # noqa: E402
+    audit_registry,
     assess_promotion,
     capture,
     configure,
@@ -21,8 +22,10 @@ from experience_registry import (  # noqa: E402
     load_config,
     load_records,
     mark_promoted,
+    observe_outcome,
     relevant,
     review,
+    finalize_run,
 )
 
 
@@ -257,11 +260,11 @@ class ExperienceRegistryTests(unittest.TestCase):
 
         self.assertEqual([], relevant(store, project_types=["desktop-app"]))
 
-    def test_capture_mode_defaults_to_ask_and_can_be_configured(self) -> None:
+    def test_capture_mode_defaults_to_auto_sanitized_and_can_be_configured(self) -> None:
         temporary, store = self.make_store()
         self.addCleanup(temporary.cleanup)
 
-        self.assertEqual({"capture_mode": "ask"}, load_config(store))
+        self.assertEqual({"capture_mode": "auto_sanitized"}, load_config(store))
         configure(store, "auto_sanitized")
         self.assertEqual({"capture_mode": "auto_sanitized"}, load_config(store))
 
@@ -395,6 +398,169 @@ class ExperienceRegistryTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "cannot read experience record"):
             load_records(store)
+
+    def test_two_independent_captures_automatically_enter_shadow(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        record, _ = self.capture_example(store, project_root="D:/project-one")
+        self.assertEqual("candidate", record["status"])
+
+        record, _ = self.capture_example(store, project_root="D:/project-two")
+        self.assertEqual("shadow", record["status"])
+        matches = relevant(
+            store,
+            project_types=["desktop-app"],
+            signals=["duplicate-docs"],
+        )
+        self.assertEqual("verify_only", matches[0]["use_mode"])
+
+    def test_two_independent_shadow_benefits_automatically_activate(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        record, _ = self.capture_example(store, project_root="D:/project-one")
+        record, _ = self.capture_example(store, project_root="D:/project-two")
+
+        observe_outcome(
+            store,
+            pattern_id=record["pattern_id"],
+            kind="shadow_benefit",
+            summary="The check prevented duplicate authority",
+            project_root="D:/validation-one",
+        )
+        result = observe_outcome(
+            store,
+            pattern_id=record["pattern_id"],
+            kind="shadow_benefit",
+            summary="The check found the same risk before editing",
+            project_root="D:/validation-two",
+        )
+
+        self.assertEqual("active", result["record"]["status"])
+        matches = relevant(
+            store,
+            project_types=["desktop-app"],
+            signals=["duplicate-docs"],
+        )
+        self.assertEqual("apply_advisory", matches[0]["use_mode"])
+
+    def test_outcome_and_audit_are_idempotent(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        record, _ = self.capture_example(store, project_root="D:/project-one")
+        record, _ = self.capture_example(store, project_root="D:/project-two")
+        first = observe_outcome(
+            store,
+            pattern_id=record["pattern_id"],
+            kind="shadow_benefit",
+            summary="Validation helped",
+            project_root="D:/validation-one",
+        )
+        second = observe_outcome(
+            store,
+            pattern_id=record["pattern_id"],
+            kind="shadow_benefit",
+            summary="Validation helped",
+            project_root="D:/validation-one",
+        )
+
+        self.assertTrue(first["created"])
+        self.assertFalse(second["created"])
+        self.assertEqual([], audit_registry(store)["transitions"])
+
+    def test_regression_automatically_rolls_back_active_experience(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        record, _ = self.capture_example(store, project_root="D:/project-one")
+        review(
+            store,
+            pattern_id=record["pattern_id"],
+            decision="accept",
+            reason="Explicit emergency acceptance for the fixture",
+        )
+        result = observe_outcome(
+            store,
+            pattern_id=record["pattern_id"],
+            kind="regression",
+            summary="The advice hid a valid project owner",
+            project_root="D:/regression-project",
+        )
+
+        self.assertEqual("rolled_back", result["record"]["status"])
+        self.assertEqual(
+            [],
+            relevant(
+                store,
+                project_types=["desktop-app"],
+                signals=["duplicate-docs"],
+            ),
+        )
+
+    def test_conflict_with_promoted_rule_is_quarantined_without_overriding_it(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        promoted, _ = self.capture_example(store, project_root="D:/project-one")
+        self.capture_example(store, project_root="D:/project-two")
+        review(
+            store,
+            pattern_id=promoted["pattern_id"],
+            decision="accept",
+            reason="Fixture promotion acceptance",
+        )
+        mark_promoted(
+            store,
+            pattern_id=promoted["pattern_id"],
+            target=["SKILL.md"],
+            forward_tests=["fixture passed"],
+            regression_tests=["suite passed"],
+            approval_note="User approved the fixture promotion",
+            user_approved=True,
+        )
+        replacement, _ = capture(
+            store,
+            problem="Generated every possible documentation file",
+            observed_failure="A contradictory lesson was captured",
+            preferred_response="Always generate every available documentation artifact",
+            scope="cross_project",
+            project_root="D:/project-three",
+            project_types=["desktop-app"],
+            signals=["duplicate-docs"],
+            evidence=["Contradictory evidence"],
+        )
+
+        self.assertEqual("conflicted", replacement["status"])
+        self.assertEqual("promoted", find_record(store, promoted["pattern_id"])["status"])
+
+    def test_schema_v1_records_migrate_without_losing_review_metadata(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+        record, _ = self.capture_example(store, project_root="D:/project-one")
+        path = store / "candidates" / f"{record['pattern_id']}.json"
+        import json
+
+        legacy = json.loads(path.read_text(encoding="utf-8"))
+        legacy["schema_version"] = 1
+        legacy["status"] = "accepted_local"
+        legacy["review"] = {"decision": "accept", "reason": "Legacy approval", "reviewed_at": legacy["last_seen_at"]}
+        legacy.pop("lifecycle")
+        legacy.pop("outcomes")
+        path.write_text(json.dumps(legacy, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+        migrated = find_record(store, record["pattern_id"])
+        self.assertEqual(2, migrated["schema_version"])
+        self.assertEqual("active", migrated["status"])
+        self.assertEqual("Legacy approval", migrated["review"]["reason"])
+        audit_registry(store)
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(2, persisted["schema_version"])
+
+    def test_finalize_writes_no_eligible_experience_receipt(self) -> None:
+        temporary, store = self.make_store()
+        self.addCleanup(temporary.cleanup)
+
+        result = finalize_run(store, run_summary="No reusable friction occurred")
+
+        self.assertEqual("no-eligible-experience", result["outcome"])
+        self.assertTrue(Path(result["receipt"]).exists())
 
 
 if __name__ == "__main__":
