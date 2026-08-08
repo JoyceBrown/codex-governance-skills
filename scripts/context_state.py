@@ -1,0 +1,1797 @@
+#!/usr/bin/env python3
+"""Create and validate a small, project-scoped durable context ledger."""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import sys
+import tempfile
+import uuid
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+
+DEFAULT_DIR = ".agent-context"
+REQUIRED_FILES = (
+    "task.md",
+    "requirements.md",
+    "findings.md",
+    "decisions.md",
+    "handoff.md",
+    "history.jsonl",
+    "changes.jsonl",
+    "manifest.json",
+)
+TRACKED_FILES = ("task.md", "requirements.md", "findings.md", "decisions.md", "handoff.md")
+MAX_FIELD_LENGTH = 4000
+MAX_REQUIREMENTS_LENGTH = 12000
+LEDGER_VERSION = 5
+TASK_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def require_text(value: str, field: str) -> str:
+    text = value.strip()
+    if not text:
+        raise ValueError(f"{field} must not be empty")
+    if len(text) > MAX_FIELD_LENGTH:
+        raise ValueError(f"{field} must be at most {MAX_FIELD_LENGTH} characters")
+    return text
+
+
+def require_task(value: str) -> str:
+    text = require_text(value, "task")
+    if "\n" in text or "\r" in text or re.search(r"(?m)^\s*##\s+", text):
+        raise ValueError("task objective must be a single line without Markdown headings")
+    return text
+
+
+def require_requirements(value: str, field: str = "requirements") -> str:
+    text = value.strip()
+    if not text:
+        raise ValueError(f"{field} must not be empty")
+    if len(text) > MAX_REQUIREMENTS_LENGTH:
+        raise ValueError(f"{field} must be at most {MAX_REQUIREMENTS_LENGTH} characters")
+    return text
+
+
+def sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def canonical_path(value: Any, field: str) -> Path:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field} must not be empty")
+    return Path(text).expanduser().resolve()
+
+
+def validate_task_id(value: Any) -> str:
+    task_id = str(value or "").strip()
+    if not TASK_ID_PATTERN.fullmatch(task_id):
+        raise ValueError("task_id must be a 32-character lowercase hexadecimal id")
+    return task_id
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def content_hashes(context_dir: Path) -> dict[str, str]:
+    return {
+        name: file_hash(context_dir / name)
+        for name in TRACKED_FILES
+        if (context_dir / name).is_file()
+    }
+
+
+def append_change(context_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    path = context_dir / "changes.jsonl"
+    previous_hash = ""
+    if path.is_file():
+        for line in reversed(path.read_text(encoding="utf-8").splitlines()):
+            if not line.strip():
+                continue
+            try:
+                previous = json.loads(line)
+            except json.JSONDecodeError:
+                break
+            if isinstance(previous, dict):
+                previous_hash = str(previous.get("event_hash", ""))
+            break
+    enriched = dict(payload)
+    enriched["previous_event_hash"] = previous_hash
+    enriched["event_hash"] = change_event_hash(enriched)
+    append_jsonl(path, enriched)
+    return enriched
+
+
+def initial_requirements(task: str) -> str:
+    return "\n".join(
+        (
+            "# Current Requirements",
+            "",
+            "## Objective",
+            task,
+            "",
+            "## Acceptance Standard",
+            "- [ ] Define the completion evidence.",
+            "",
+            "## Current Route",
+            "- [ ] Inspect current state and identify the first concrete phase.",
+            "",
+            "## Current Revision",
+            "0",
+            "",
+        )
+    )
+
+
+def requirements_revision(manifest: dict[str, Any]) -> int:
+    value = manifest.get("requirements_revision", 0)
+    return value if isinstance(value, int) and value >= 0 else 0
+
+
+def markdown_sections(text: str) -> tuple[str, list[tuple[str, str]]]:
+    preamble: list[str] = []
+    sections: list[tuple[str, str]] = []
+    heading = ""
+    body: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if heading:
+                sections.append((heading, "\n".join(body).strip()))
+            elif body:
+                preamble.extend(body)
+            heading = line[3:].strip()
+            body = []
+        else:
+            body.append(line)
+    if heading:
+        sections.append((heading, "\n".join(body).strip()))
+    elif body:
+        preamble.extend(body)
+    return "\n".join(preamble).strip(), sections
+
+
+def validate_unique_sections(sections: list[tuple[str, str]]) -> None:
+    seen: set[str] = set()
+    for name, _ in sections:
+        if name in seen:
+            raise ValueError(f"requirements contains duplicate section: {name}")
+        seen.add(name)
+
+
+def normalize_requirements(text: str, revision: int) -> str:
+    value = require_requirements(text)
+    if not value.startswith("# Current Requirements"):
+        value = "# Current Requirements\n\n" + value
+    preamble, sections = markdown_sections(value)
+    validate_unique_sections(sections)
+    kept = [(name, body) for name, body in sections if name not in {"Revision Log", "Current Revision"}]
+    lines = [preamble or "# Current Requirements", ""]
+    for name, body in kept:
+        lines.extend((f"## {name}", body, ""))
+    lines.extend(("## Current Revision", str(revision), ""))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def requirements_document_revision(text: str) -> int | None:
+    _, sections = markdown_sections(text)
+    for name, body in sections:
+        if name == "Current Revision":
+            first = body.splitlines()[0].strip() if body.strip() else ""
+            return int(first) if first.isdigit() else None
+    return None
+
+
+def compact_text(value: str, maximum: int) -> str:
+    text = value.strip()
+    if len(text) <= maximum:
+        return text
+    marker = "\n...\n"
+    if maximum <= len(marker):
+        return text[:maximum]
+    payload = maximum - len(marker)
+    head = max(1, payload // 2)
+    tail = max(1, payload - head)
+    return text[:head].rstrip() + marker + text[-tail:].lstrip()
+
+
+def requirements_brief_text(text: str, maximum: int) -> str:
+    preamble, sections = markdown_sections(text)
+    validate_unique_sections(sections)
+    by_name = {name: body for name, body in sections}
+    priorities = (
+        ("Objective", 0.18),
+        ("Current Route", 0.34),
+        ("Current Revision", 0.08),
+        ("Acceptance Standard", 0.20),
+        ("Current Details", 0.15),
+        ("Current Constraints", 0.05),
+        ("Constraints", 0.05),
+    )
+    ordered = [(name, by_name[name], weight) for name, weight in priorities if name in by_name]
+    if not ordered:
+        return compact_text(text, maximum)
+    title = preamble or "# Current Requirements"
+    headings = [f"\n\n## {name}\n" for name, _, _ in ordered]
+    available = maximum - len(title) - sum(len(heading) for heading in headings)
+    if available <= 0:
+        return title[:maximum]
+    total_weight = sum(weight for _, _, weight in ordered) or 1.0
+    budgets = [int(available * weight / total_weight) for _, _, weight in ordered]
+    budgets[-1] += available - sum(budgets)
+    output = [title]
+    for heading, (_, body, _), budget in zip(headings, ordered, budgets):
+        output.extend((heading, compact_text(body, max(0, budget))))
+    return "".join(output)
+
+
+def requirements_brief(path: Path, maximum: int) -> str:
+    return requirements_brief_text(path.read_text(encoding="utf-8"), maximum)
+
+
+def resolve_context_dir(root_arg: str, directory: str) -> tuple[Path, Path]:
+    root = Path(root_arg).expanduser().resolve()
+    if not root.is_dir():
+        raise ValueError(f"root is not a directory: {root}")
+
+    requested = Path(directory)
+    if requested.is_absolute() or ".." in requested.parts:
+        raise ValueError("--dir must be a relative path within --root")
+
+    context_dir = (root / requested).resolve()
+    try:
+        context_dir.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("context directory must stay within --root") from exc
+    return root, context_dir
+
+
+def atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=path.parent, delete=False) as handle:
+        handle.write(content)
+        temp_name = handle.name
+    os.replace(temp_name, path)
+
+
+def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    line = json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n"
+    with path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(line)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def change_event_hash(payload: dict[str, Any]) -> str:
+    value = dict(payload)
+    value.pop("event_hash", None)
+    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return sha256_text(encoded)
+
+
+def rehash_change_log(context_dir: Path) -> None:
+    path = context_dir / "changes.jsonl"
+    if not path.is_file():
+        return
+    values: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if not isinstance(value, dict):
+            raise ValueError("changes.jsonl entries must be objects")
+        values.append(value)
+    has_requirement_changes = any(value.get("kind") == "requirement_change" for value in values)
+    current_requirements = (context_dir / "requirements.md").read_text(encoding="utf-8")
+    previous_hash = ""
+    output: list[str] = []
+    for value in values:
+        if value.get("kind") == "task_started" and not isinstance(value.get("requirements_after"), str):
+            if has_requirement_changes:
+                value["legacy_snapshot_unavailable"] = True
+            else:
+                value["requirements_after"] = current_requirements
+                value["requirements_hash"] = sha256_text(current_requirements)
+        if value.get("kind") == "requirement_change" and not isinstance(value.get("requirements_after"), str):
+            value["legacy_snapshot_unavailable"] = True
+        value["previous_event_hash"] = previous_hash
+        value["event_hash"] = change_event_hash(value)
+        previous_hash = value["event_hash"]
+        output.append(json.dumps(value, ensure_ascii=True, separators=(",", ":")))
+    atomic_write(path, "\n".join(output) + ("\n" if output else ""))
+
+
+@contextmanager
+def ledger_lock(context_dir: Path):
+    context_dir.mkdir(parents=True, exist_ok=True)
+    path = context_dir / ".ledger.lock"
+    handle = path.open("a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
+def wait_for_ledger_idle(context_dir: Path) -> None:
+    with ledger_lock(context_dir):
+        return
+
+
+@contextmanager
+def ledger_transaction(context_dir: Path, kind: str):
+    transaction_path = context_dir / ".transaction.json"
+    with ledger_lock(context_dir):
+        if transaction_path.exists():
+            raise ValueError(f"incomplete ledger transaction exists: {transaction_path}")
+        backups = {
+            name: (context_dir / name).read_text(encoding="utf-8") if (context_dir / name).is_file() else None
+            for name in REQUIRED_FILES
+        }
+        transaction = {
+            "id": uuid.uuid4().hex,
+            "kind": kind,
+            "started_at": utc_now(),
+            "backups": backups,
+        }
+        atomic_write(
+            transaction_path,
+            json.dumps(transaction, ensure_ascii=True, indent=2) + "\n",
+        )
+        try:
+            yield
+        except Exception:
+            for name, content in backups.items():
+                path = context_dir / name
+                if content is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    atomic_write(path, content)
+            transaction_path.unlink(missing_ok=True)
+            raise
+        else:
+            transaction_path.unlink(missing_ok=True)
+
+
+def recover_transaction(context_dir: Path) -> dict[str, Any]:
+    transaction_path = context_dir / ".transaction.json"
+    if not transaction_path.is_file():
+        raise ValueError("no incomplete ledger transaction exists")
+    removed_context = False
+    with ledger_lock(context_dir):
+        transaction = json.loads(transaction_path.read_text(encoding="utf-8"))
+        backups = transaction.get("backups")
+        if not isinstance(backups, dict):
+            raise ValueError("transaction does not contain rollback backups")
+        for name, content in backups.items():
+            if name not in REQUIRED_FILES:
+                continue
+            path = context_dir / name
+            if content is None:
+                path.unlink(missing_ok=True)
+            elif isinstance(content, str):
+                atomic_write(path, content)
+            else:
+                raise ValueError(f"invalid transaction backup for {name}")
+        transaction_path.unlink(missing_ok=True)
+        kind = str(transaction.get("kind", "unknown"))
+    if kind == "initialize" and not (context_dir / "manifest.json").exists():
+        lock_path = context_dir / ".ledger.lock"
+        lock_path.unlink(missing_ok=True)
+        shutil.rmtree(context_dir)
+        removed_context = True
+    return {
+        "transaction_id": transaction.get("id", "unknown"),
+        "kind": kind,
+        "restored": True,
+        "removed_incomplete_context": removed_context,
+    }
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid manifest: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError("manifest must contain a JSON object")
+    return value
+
+
+def write_manifest(context_dir: Path, manifest: dict[str, Any]) -> None:
+    atomic_write(context_dir / "manifest.json", json.dumps(manifest, ensure_ascii=True, indent=2) + "\n")
+
+
+def render_handoff(manifest: dict[str, Any], summary: str, next_action: str, verified: str, risks: str) -> str:
+    return "\n".join(
+        (
+            "# Resume Brief",
+            "",
+            "## Objective",
+            str(manifest["task"]),
+            "",
+            "## Current State",
+            f"- Status: {manifest['status']}",
+            f"- Checkpoint: {manifest['checkpoint']}",
+            f"- Requirements revision: {requirements_revision(manifest)}",
+            f"- Requirements hash: {manifest.get('recorded_requirements_hash', '')}",
+            f"- Task root: {manifest.get('root', '')}",
+            f"- Task ID: {manifest.get('task_id', '')}",
+            f"- Updated: {manifest['updated_at']}",
+            "",
+            "## Last Verified Progress",
+            summary,
+            "",
+            "## Verification",
+            verified or "Not provided. Recheck before relying on this state.",
+            "",
+            "## Next Action",
+            next_action,
+            "",
+            "## Risks Or Blockers",
+            risks or "None recorded.",
+            "",
+            "## Resume Protocol",
+            "The next Codex turn should automatically validate this ledger and read this brief before acting.",
+            "Check the current requirements revision and recent change log before relying on older decisions.",
+            "Recheck current files, git state, tests, and external state before acting.",
+            "Do not replay an action whose completion is uncertain.",
+            "",
+        )
+    )
+
+
+def initial_task(task: str) -> str:
+    return "\n".join(
+        (
+            "# Task Execution",
+            "",
+            "## Requirements Reference",
+            "Use `requirements.md` as the only source for objective, acceptance, route, constraints, and implementation details.",
+            "",
+            "## Execution Plan",
+            "- [ ] Inspect current state and identify the first concrete phase.",
+            "",
+            "## Execution Notes",
+            "- Task execution notes are non-authoritative and must not redefine requirements.",
+            "",
+        )
+    )
+
+
+def requirements_objective(text: str) -> str:
+    _, sections = markdown_sections(text)
+    validate_unique_sections(sections)
+    for name, body in sections:
+        if name == "Objective":
+            return body.strip()
+    return ""
+
+
+def requirements_section(text: str, section_name: str) -> str:
+    _, sections = markdown_sections(text)
+    validate_unique_sections(sections)
+    for name, body in sections:
+        if name == section_name:
+            return body
+    return ""
+
+
+def merge_current_detail(current: str, summary: str, impact: str) -> str:
+    preamble, sections = markdown_sections(current)
+    validate_unique_sections(sections)
+    summary = require_text(summary, "detail summary")
+    impact = impact.strip()
+    if "\n" in summary or "\r" in summary or re.search(r"(?m)^\s*##\s+", summary):
+        raise ValueError("detail summary must be a single line without Markdown headings")
+    if "\n" in impact or "\r" in impact or re.search(r"(?m)^\s*##\s+", impact):
+        raise ValueError("detail impact must be a single line without Markdown headings")
+    updated: list[tuple[str, str]] = []
+    detail_line = f"- {summary}"
+    if impact.strip():
+        detail_line += f" Impact: {impact}"
+    detail_key = detail_line[2:].split(":", 1)[0].strip().casefold() if ":" in detail_line else ""
+    found = False
+    for name, body in sections:
+        if name in {"Revision Log", "Current Revision"}:
+            continue
+        if name == "Current Details":
+            found = True
+            lines = body.splitlines() if body.strip() else []
+            replaced = False
+            next_lines: list[str] = []
+            for line in lines:
+                existing = line.strip()[2:].strip() if line.strip().startswith("- ") else ""
+                existing_key = existing.split(":", 1)[0].strip().casefold() if ":" in existing else ""
+                if detail_key and existing_key == detail_key:
+                    if not replaced:
+                        next_lines.append(detail_line)
+                        replaced = True
+                    continue
+                next_lines.append(line)
+            if not replaced and detail_line not in next_lines:
+                next_lines.append(detail_line)
+            lines = next_lines
+            updated.append((name, "\n".join(lines)))
+        else:
+            updated.append((name, body))
+    if not found:
+        updated.append(("Current Details", detail_line))
+    lines = [preamble or "# Current Requirements", ""]
+    for name, body in updated:
+        lines.extend((f"## {name}", body, ""))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def normalize_task_execution(text: str) -> str:
+    _, sections = markdown_sections(text)
+    by_name = {name: body for name, body in sections}
+    plan = by_name.get("Execution Plan") or by_name.get("Plan") or "- [ ] Inspect current state and identify the next phase."
+    notes = by_name.get("Execution Notes", "- Migrated from an earlier task ledger.")
+    return "\n".join(
+        (
+            "# Task Execution",
+            "",
+            "## Requirements Reference",
+            "Use `requirements.md` as the only source for objective, acceptance, route, constraints, and implementation details.",
+            "",
+            "## Execution Plan",
+            plan,
+            "",
+            "## Execution Notes",
+            notes,
+            "",
+        )
+    )
+
+
+def task_execution_brief(path: Path, maximum: int) -> str:
+    text = path.read_text(encoding="utf-8")
+    _, sections = markdown_sections(text)
+    by_name = {name: body for name, body in sections}
+    plan = by_name.get("Execution Plan", "No execution plan recorded.")
+    return compact_text(
+        "# Task Execution\n\nNon-authoritative execution sequence; `requirements.md` overrides any conflict.\n\n"
+        "## Execution Plan\n"
+        + plan,
+        maximum,
+    )
+
+
+def initialize(root: Path, context_dir: Path, task: str) -> None:
+    if context_dir.exists():
+        raise ValueError(f"context directory already exists: {context_dir}")
+    context_dir.mkdir(parents=True)
+    task = require_task(task)
+    now = utc_now()
+    requirements = normalize_requirements(initial_requirements(task), 0)
+    start_id = uuid.uuid4().hex
+    manifest = {
+        "version": LEDGER_VERSION,
+        "task_id": uuid.uuid4().hex,
+        "task": task,
+        "status": "active",
+        "checkpoint": 0,
+        "requirements_revision": 0,
+        "last_change_id": start_id,
+        "last_event_id": start_id,
+        "recorded_requirements_hash": sha256_text(requirements),
+        "checkpoint_hashes": {},
+        "created_at": now,
+        "updated_at": now,
+        "root": str(root),
+    }
+    with ledger_transaction(context_dir, "initialize"):
+        write_manifest(context_dir, manifest)
+        atomic_write(context_dir / "task.md", initial_task(task))
+        atomic_write(context_dir / "requirements.md", requirements)
+        atomic_write(context_dir / "findings.md", "# Findings\n\n## Verified\n\n")
+        atomic_write(context_dir / "decisions.md", "# Decisions\n\n## Decision Log\n\n")
+        atomic_write(context_dir / "changes.jsonl", "")
+        atomic_write(
+            context_dir / "handoff.md",
+            render_handoff(
+                manifest,
+                "Ledger initialized. Inspect the repository before recording findings.",
+                "Identify the first concrete phase and update task.md.",
+                "Not yet verified.",
+                "No repository state has been inspected yet.",
+            ),
+        )
+        append_jsonl(context_dir / "history.jsonl", {"at": now, "kind": "init", "task": task})
+        append_change(
+            context_dir,
+            {
+                "id": start_id,
+                "at": now,
+                "kind": "task_started",
+                "category": "scope",
+                "summary": "Initial task requirements created.",
+                "source": "user_task",
+                "revision": 0,
+                "requirements_after": requirements,
+                "requirements_hash": sha256_text(requirements),
+            },
+        )
+        manifest["checkpoint_hashes"] = content_hashes(context_dir)
+        write_manifest(context_dir, manifest)
+
+
+def migrate_ledger(context_dir: Path, expected_root: Path | None = None) -> None:
+    """Add the versioned requirement and change ledger to an older context directory."""
+    if not context_dir.is_dir():
+        return
+    wait_for_ledger_idle(context_dir)
+    if (context_dir / ".transaction.json").exists():
+        raise ValueError(f"incomplete ledger transaction exists: {context_dir / '.transaction.json'}")
+    manifest = read_json(context_dir / "manifest.json")
+    expected_root = expected_root.resolve() if expected_root else None
+    changed = False
+    now = utc_now()
+    task = str(manifest.get("task", "Unspecified task"))
+    if expected_root and manifest.get("root"):
+        recorded_root = canonical_path(manifest.get("root"), "manifest root")
+        if recorded_root != expected_root:
+            raise ValueError(f"ledger belongs to a different project root: {recorded_root}")
+    if not manifest.get("root"):
+        if not expected_root:
+            raise ValueError("legacy ledger is missing its project root")
+        manifest["root"] = str(expected_root)
+        changed = True
+    task_id = str(manifest.get("task_id", "")).strip()
+    if not TASK_ID_PATTERN.fullmatch(task_id):
+        manifest["task_id"] = uuid.uuid4().hex
+        changed = True
+    if not (context_dir / "requirements.md").is_file():
+        atomic_write(context_dir / "requirements.md", initial_requirements(task))
+        changed = True
+    if not (context_dir / "changes.jsonl").is_file():
+        atomic_write(context_dir / "changes.jsonl", "")
+        append_change(
+            context_dir,
+            {
+                "id": uuid.uuid4().hex,
+                "at": now,
+                "kind": "ledger_migrated",
+                "category": "system",
+                "summary": "Added versioned requirements and change history.",
+                "source": "durable-context-migration",
+                "revision": 0,
+            },
+        )
+        changed = True
+    if manifest.get("version", 1) < LEDGER_VERSION:
+        manifest["version"] = LEDGER_VERSION
+        changed = True
+    if "requirements_revision" not in manifest:
+        manifest["requirements_revision"] = 0
+        changed = True
+    if "last_change_id" not in manifest:
+        manifest["last_change_id"] = ""
+        changed = True
+    if "last_event_id" not in manifest:
+        manifest["last_event_id"] = ""
+        changed = True
+    if "recorded_requirements_hash" not in manifest:
+        manifest["recorded_requirements_hash"] = ""
+        changed = True
+    if "checkpoint_hashes" not in manifest:
+        manifest["checkpoint_hashes"] = content_hashes(context_dir)
+        changed = True
+    existing_changes = read_changes(context_dir, maximum=100000)
+    if any(not entry.get("event_hash") for entry in existing_changes):
+        changed = True
+    if any(
+        entry.get("kind") == "task_started" and not isinstance(entry.get("requirements_after"), str)
+        for entry in existing_changes
+    ):
+        changed = True
+    if changed:
+        with ledger_transaction(context_dir, "migrate"):
+            revision = requirements_revision(manifest)
+            normalized = normalize_requirements((context_dir / "requirements.md").read_text(encoding="utf-8"), revision)
+            objective = requirements_objective(normalized)
+            if not objective:
+                raise ValueError("requirements.md must contain a non-empty Objective section")
+            atomic_write(context_dir / "requirements.md", normalized)
+            atomic_write(
+                context_dir / "task.md",
+                normalize_task_execution((context_dir / "task.md").read_text(encoding="utf-8")),
+            )
+            rehash_change_log(context_dir)
+            entries = read_changes(context_dir, maximum=100000)
+            last_event = entries[-1] if entries else {}
+            requirement_events = [
+                entry
+                for entry in entries
+                if entry.get("kind") in {"task_started", "requirement_change"}
+            ]
+            last_requirement = requirement_events[-1] if requirement_events else {}
+            manifest["last_event_id"] = str(last_event.get("id", ""))
+            manifest["last_change_id"] = str(last_requirement.get("id", ""))
+            manifest["task"] = objective
+            manifest["recorded_requirements_hash"] = file_hash(context_dir / "requirements.md")
+            manifest["checkpoint_hashes"] = content_hashes(context_dir)
+            manifest["updated_at"] = now
+            handoff_path = context_dir / "handoff.md"
+            handoff_text = handoff_path.read_text(encoding="utf-8") if handoff_path.is_file() else ""
+            atomic_write(
+                handoff_path,
+                render_handoff(
+                    manifest,
+                    "Legacy ledger metadata migrated. Re-check current files before relying on this state.",
+                    "Validate the current project and continue from the latest verified checkpoint.",
+                    "Ledger migration completed; implementation evidence must be rechecked.",
+                    "The previous handoff was retained only as migration input and is no longer authoritative."
+                    if handoff_text.strip()
+                    else "No prior handoff was available.",
+                ),
+            )
+            write_manifest(context_dir, manifest)
+
+
+def archive_completed(
+    root: Path,
+    context_dir: Path,
+    manifest: dict[str, Any],
+    reason: str = "new_task_after_completed_task",
+) -> Path:
+    archive_root = root / ".agent-context-archive"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    task_id = validate_task_id(manifest.get("task_id"))
+    destination = archive_root / task_id
+    suffix = 1
+    while destination.exists():
+        destination = archive_root / f"{task_id}-{suffix}"
+        suffix += 1
+    try:
+        destination.resolve().relative_to(archive_root.resolve())
+    except ValueError as exc:
+        raise ValueError("archive destination escapes the project archive root") from exc
+    transaction_path = context_dir / ".transaction.json"
+    with ledger_lock(context_dir):
+        if transaction_path.exists():
+            raise ValueError(f"incomplete ledger transaction exists: {transaction_path}")
+        atomic_write(
+            transaction_path,
+            json.dumps(
+                {
+                    "id": uuid.uuid4().hex,
+                    "kind": "archive",
+                    "started_at": utc_now(),
+                    "backups": {},
+                },
+                ensure_ascii=True,
+                indent=2,
+            )
+            + "\n",
+        )
+    try:
+        shutil.move(str(context_dir), str(destination))
+    except Exception:
+        transaction_path.unlink(missing_ok=True)
+        raise
+    (destination / ".transaction.json").unlink(missing_ok=True)
+    append_jsonl(
+        archive_root / "index.jsonl",
+        {
+            "at": utc_now(),
+            "task_id": task_id,
+            "task": manifest.get("task", ""),
+            "archived_to": str(destination),
+            "reason": reason,
+        },
+    )
+    return destination
+
+
+def checkpoint(
+    context_dir: Path,
+    summary: str,
+    next_action: str,
+    verified: str,
+    risks: str,
+    status: str,
+    expected_root: Path | None = None,
+) -> None:
+    with ledger_transaction(context_dir, "checkpoint"):
+        manifest = read_json(context_dir / "manifest.json")
+        current_requirements_hash = file_hash(context_dir / "requirements.md")
+        if current_requirements_hash != manifest.get("recorded_requirements_hash"):
+            raise ValueError("unrecorded requirements change; record a requirement change before checkpointing")
+        if status == "complete":
+            if not verified.strip():
+                raise ValueError("complete checkpoint requires non-empty verification evidence")
+            acceptance = requirements_section(
+                (context_dir / "requirements.md").read_text(encoding="utf-8"),
+                "Acceptance Standard",
+            )
+            if re.search(r"(?m)^\s*- \[ \]", acceptance):
+                raise ValueError("cannot complete while Acceptance Standard has unfinished items")
+        pre_errors = verify(context_dir, ignore_transaction=True, expected_root=expected_root)
+        if status != "complete":
+            pre_errors = [
+                error
+                for error in pre_errors
+                if error
+                not in {
+                    "complete ledger must contain verification evidence in handoff",
+                    "complete ledger has unfinished Acceptance Standard items",
+                }
+            ]
+        if pre_errors:
+            raise ValueError("ledger is invalid before checkpoint: " + "; ".join(pre_errors))
+        manifest["checkpoint"] = int(manifest.get("checkpoint", 0)) + 1
+        manifest["status"] = status
+        manifest["updated_at"] = utc_now()
+        write_manifest(context_dir, manifest)
+        atomic_write(context_dir / "handoff.md", render_handoff(manifest, summary, next_action, verified, risks))
+        append_jsonl(
+            context_dir / "history.jsonl",
+            {
+                "at": manifest["updated_at"],
+                "kind": "checkpoint",
+                "number": manifest["checkpoint"],
+                "status": status,
+                "summary": summary,
+                "next_action": next_action,
+                "verified": verified,
+                "risks": risks,
+            },
+        )
+        event = append_change(
+            context_dir,
+            {
+                "id": uuid.uuid4().hex,
+                "at": manifest["updated_at"],
+                "kind": "checkpoint",
+                "checkpoint": manifest["checkpoint"],
+                "revision": requirements_revision(manifest),
+                "summary": summary,
+                "status": status,
+            },
+        )
+        manifest["last_event_id"] = event["id"]
+        manifest["checkpoint_hashes"] = content_hashes(context_dir)
+        write_manifest(context_dir, manifest)
+
+
+def read_changes(context_dir: Path, maximum: int = 20) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    path = context_dir / "changes.jsonl"
+    if not path.is_file():
+        return entries
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            entries.append({"kind": "invalid", "line": number})
+            continue
+        if isinstance(value, dict):
+            entries.append(value)
+    return entries[-maximum:]
+
+
+def compact_change_entries(entries: list[dict[str, Any]]) -> str:
+    allowed = (
+        "id",
+        "at",
+        "kind",
+        "category",
+        "summary",
+        "impact",
+        "source",
+        "revision",
+        "before_revision",
+        "after_revision",
+        "checkpoint",
+        "status",
+    )
+    compact = [{key: entry[key] for key in allowed if key in entry} for entry in entries]
+    return json.dumps(compact, ensure_ascii=False, indent=2)
+
+
+def last_recorded_requirements(context_dir: Path) -> str:
+    for entry in reversed(read_changes(context_dir, maximum=100000)):
+        if entry.get("kind") in {"task_started", "requirement_change"}:
+            snapshot = entry.get("requirements_after")
+            if isinstance(snapshot, str):
+                return snapshot
+    raise ValueError("no trusted requirements snapshot exists in the change log")
+
+
+def render_budgeted_resume(
+    manifest: dict[str, Any],
+    maximum: int,
+    sections: list[tuple[str, str, float]],
+) -> str:
+    header = (
+        "# Durable Context Resume\n\n"
+        f"Task ID: {manifest.get('task_id', 'unknown')} | "
+        f"Status: {manifest.get('status', 'unknown')} | "
+        f"Requirements revision: {requirements_revision(manifest)}"
+    )
+    headings = [f"\n\n## {name}\n" for name, _, _ in sections]
+    available = maximum - len(header) - sum(len(value) for value in headings)
+    if available <= 0:
+        return header[:maximum]
+    total_weight = sum(weight for _, _, weight in sections) or 1.0
+    budgets = [int(available * weight / total_weight) for _, _, weight in sections]
+    budgets[-1] += available - sum(budgets)
+    output = [header]
+    for heading, (_, content, _), budget in zip(headings, sections, budgets):
+        rendered_content = (
+            requirements_brief_text(content, max(0, budget))
+            if heading == "\n\n## Current Requirements\n"
+            else compact_text(content, max(0, budget))
+        )
+        output.extend((heading, rendered_content))
+    rendered = "".join(output)
+    if len(rendered) > maximum:
+        raise RuntimeError("resume renderer exceeded its character budget")
+    return rendered
+
+
+def change(
+    context_dir: Path,
+    summary: str,
+    category: str,
+    source: str,
+    impact: str,
+    requirements: str,
+    expected_root: Path | None = None,
+) -> dict[str, Any]:
+    if category in {"route", "acceptance", "scope"} and not requirements.strip():
+        raise ValueError("a current requirements snapshot is required for route, acceptance, or scope changes")
+    manifest_before = read_json(context_dir / "manifest.json")
+    if file_hash(context_dir / "requirements.md") != manifest_before.get("recorded_requirements_hash"):
+        raise ValueError(
+            "requirements.md contains an unrecorded change; reconcile the file before recording a new requirement change"
+        )
+    with ledger_transaction(context_dir, "requirement_change"):
+        pre_errors = verify(context_dir, ignore_transaction=True, expected_root=expected_root)
+        if pre_errors:
+            raise ValueError("ledger is invalid before requirement change: " + "; ".join(pre_errors))
+        manifest = read_json(context_dir / "manifest.json")
+        previous_revision = requirements_revision(manifest)
+        next_revision = previous_revision + 1
+        current_file = (context_dir / "requirements.md").read_text(encoding="utf-8")
+        current = (
+            last_recorded_requirements(context_dir)
+            if file_hash(context_dir / "requirements.md") != manifest.get("recorded_requirements_hash")
+            else current_file
+        )
+        source_requirements = requirements if requirements.strip() else merge_current_detail(current, summary, impact)
+        updated_requirements = normalize_requirements(source_requirements, next_revision)
+        objective = requirements_objective(updated_requirements)
+        if not objective:
+            raise ValueError("requirements snapshot must contain a non-empty Objective section")
+        now = utc_now()
+        change_id = uuid.uuid4().hex
+        payload = {
+            "id": change_id,
+            "at": now,
+            "kind": "requirement_change",
+            "category": category,
+            "summary": summary,
+            "impact": impact,
+            "source": source,
+            "before_revision": previous_revision,
+            "after_revision": next_revision,
+            "requirements_before": current,
+            "requirements_after": updated_requirements,
+            "requirements_hash": sha256_text(updated_requirements),
+        }
+        atomic_write(context_dir / "requirements.md", updated_requirements)
+        enriched = append_change(context_dir, payload)
+        manifest["requirements_revision"] = next_revision
+        manifest["task"] = objective
+        manifest["last_change_id"] = change_id
+        manifest["last_event_id"] = change_id
+        manifest["recorded_requirements_hash"] = sha256_text(updated_requirements)
+        manifest["updated_at"] = now
+        write_manifest(context_dir, manifest)
+        atomic_write(
+            context_dir / "handoff.md",
+            render_handoff(
+                manifest,
+                summary,
+                "Validate the revised requirements against current files before checkpointing.",
+                "Requirement change recorded in the append-only change log.",
+                impact.strip() or "Recheck acceptance, route, and implementation details before continuing.",
+            ),
+        )
+    return enriched
+
+
+def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str, Any]:
+    errors = verify(context_dir, expected_root=expected_root)
+    warnings: list[str] = []
+    manifest = read_json(context_dir / "manifest.json") if not errors else {}
+    checkpoint_hashes = manifest.get("checkpoint_hashes", {})
+    current_hashes = content_hashes(context_dir)
+    if isinstance(checkpoint_hashes, dict):
+        for name, digest in current_hashes.items():
+            expected = checkpoint_hashes.get(name)
+            if expected and expected != digest:
+                warnings.append(f"uncheckpointed content change: {name}")
+    if manifest and current_hashes.get("requirements.md") != manifest.get("recorded_requirements_hash"):
+        warnings.append("unrecorded requirements change")
+
+    changes = read_changes(context_dir, maximum=100000)
+    revision_entries = [
+        entry
+        for entry in changes
+        if entry.get("kind") == "requirement_change" and isinstance(entry.get("after_revision"), int)
+    ]
+    last_revision = revision_entries[-1]["after_revision"] if revision_entries else 0
+    manifest_revision = requirements_revision(manifest) if manifest else 0
+    if last_revision != manifest_revision:
+        warnings.append(
+            f"requirements revision mismatch: change log={last_revision}, manifest={manifest_revision}"
+        )
+    if not errors:
+        requirements_text = (context_dir / "requirements.md").read_text(encoding="utf-8")
+        document_revision = requirements_document_revision(requirements_text)
+        if document_revision != manifest_revision:
+            warnings.append(
+                f"requirements document revision mismatch: document={document_revision}, manifest={manifest_revision}"
+            )
+
+    return {
+        "valid": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "requirements_revision": manifest_revision,
+        "recent_changes": read_changes(context_dir, maximum=8),
+    }
+
+
+def automatic(
+    root: Path,
+    context_dir: Path,
+    event: str,
+    task: str,
+    summary: str,
+    next_action: str,
+    verified: str,
+    risks: str,
+    status: str,
+    maximum: int,
+    category: str = "",
+    source: str = "",
+    impact: str = "",
+    requirements: str = "",
+) -> dict[str, Any]:
+    """Run the lifecycle through one internal, agent-facing routing entry point."""
+    if event == "recover":
+        if not context_dir.is_dir():
+            raise ValueError("context directory does not exist")
+        result = recover_transaction(context_dir)
+        if result["removed_incomplete_context"] and task.strip():
+            initialize(root, context_dir, require_task(task))
+            result["reinitialized"] = True
+        return {"action": "transaction_recovered", "context_dir": str(context_dir), **result}
+
+    if event == "start":
+        if context_dir.exists():
+            wait_for_ledger_idle(context_dir)
+            if (context_dir / ".transaction.json").exists():
+                return {
+                    "action": "recovery_required",
+                    "context_dir": str(context_dir),
+                    "transaction": json.loads((context_dir / ".transaction.json").read_text(encoding="utf-8")),
+                }
+            migrate_ledger(context_dir, root)
+            existing = read_json(context_dir / "manifest.json")
+            task_mismatch = task.strip() and task.strip() != str(existing.get("task", "")).strip()
+            if task_mismatch:
+                if existing.get("status") == "complete":
+                    archive_completed(root, context_dir, existing)
+                    initialize(root, context_dir, require_task(task))
+                    return {
+                        "action": "initialized_after_archive",
+                        "context_dir": str(context_dir),
+                        "resume": resume(context_dir, maximum),
+                    }
+                return {
+                    "action": "objective_conflict",
+                    "context_dir": str(context_dir),
+                    "current_task": existing.get("task", ""),
+                    "proposed_task": task.strip(),
+                    "status": existing.get("status", "unknown"),
+                    "resolution": "record a scope change for the same task, or use the internal switch event for a distinct task",
+                    "consistency": reconcile(context_dir, root),
+                }
+            errors = verify(context_dir, expected_root=root)
+            if errors:
+                raise ValueError("ledger is invalid: " + "; ".join(errors))
+            return {
+                "action": "resumed",
+                "context_dir": str(context_dir),
+                "resume": resume(context_dir, maximum),
+            }
+        initialize(root, context_dir, require_task(task))
+        return {
+            "action": "initialized",
+            "context_dir": str(context_dir),
+            "resume": resume(context_dir, maximum),
+        }
+
+    migrate_ledger(context_dir, root)
+    if not context_dir.is_dir():
+        raise ValueError("context directory does not exist; start the automatic lifecycle first")
+
+    if event == "switch":
+        existing = read_json(context_dir / "manifest.json")
+        errors = verify(context_dir, expected_root=root)
+        if errors:
+            raise ValueError("ledger is invalid: " + "; ".join(errors))
+        if existing.get("status") in {"active", "blocked"}:
+            checkpoint(
+                context_dir,
+                require_text(summary, "switch summary"),
+                require_text(next_action, "archived task next action"),
+                verified.strip(),
+                risks.strip(),
+                "blocked",
+                expected_root=root,
+            )
+            existing = read_json(context_dir / "manifest.json")
+        archived = archive_completed(root, context_dir, existing, reason="explicit_task_switch")
+        initialize(root, context_dir, require_task(task))
+        return {
+            "action": "switched_task",
+            "context_dir": str(context_dir),
+            "archived_context": str(archived),
+            "resume": resume(context_dir, maximum),
+        }
+
+    if event == "checkpoint":
+        checkpoint(
+            context_dir,
+            require_text(summary, "summary"),
+            require_text(next_action, "next action"),
+            verified.strip(),
+            risks.strip(),
+            status,
+            expected_root=root,
+        )
+        return {"action": "checkpointed", "context_dir": str(context_dir)}
+
+    if event == "change":
+        payload = change(
+            context_dir,
+            require_text(summary, "summary"),
+            category=require_text(category, "category"),
+            source=require_text(source, "source"),
+            impact=impact.strip(),
+            requirements=requirements,
+            expected_root=root,
+        )
+        return {"action": "change_recorded", "context_dir": str(context_dir), "change": payload}
+
+    if event == "reconcile":
+        return {"action": "reconciled", "context_dir": str(context_dir), **reconcile(context_dir, root)}
+
+    if event == "finish":
+        errors = verify(context_dir, expected_root=root)
+        if errors:
+            raise ValueError("ledger is invalid: " + "; ".join(errors))
+        checkpoint(
+            context_dir,
+            require_text(summary, "summary"),
+            require_text(next_action, "next action"),
+            verified.strip(),
+            risks.strip(),
+            "complete",
+            expected_root=root,
+        )
+        return {"action": "finished", "context_dir": str(context_dir)}
+
+    if event == "verify":
+        errors = verify(context_dir, expected_root=root)
+        return {
+            "action": "verified" if not errors else "invalid",
+            "context_dir": str(context_dir),
+            "errors": errors,
+        }
+
+    raise ValueError(f"unsupported automatic event: {event}")
+
+
+def read_excerpt(path: Path, maximum: int, from_end: bool = False) -> str:
+    text = path.read_text(encoding="utf-8").strip()
+    if len(text) <= maximum:
+        return text
+    if from_end:
+        return "...\n" + text[-maximum:]
+    return text[:maximum] + "\n..."
+
+
+def resume(context_dir: Path, maximum: int) -> str:
+    manifest = read_json(context_dir / "manifest.json")
+    if maximum < 1200:
+        raise ValueError("--max-chars must be at least 1200")
+    consistency = reconcile(context_dir)
+    consistency_summary = json.dumps(
+        {
+            "valid": consistency["valid"],
+            "errors": consistency["errors"],
+            "warnings": consistency["warnings"],
+            "requirements_revision": consistency["requirements_revision"],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    sections = [
+        ("Current Requirements", (context_dir / "requirements.md").read_text(encoding="utf-8"), 0.40),
+        ("Consistency", consistency_summary, 0.12),
+        ("Handoff", read_excerpt(context_dir / "handoff.md", maximum), 0.15),
+        ("Execution Plan", task_execution_brief(context_dir / "task.md", maximum), 0.08),
+        ("Recent Changes", compact_change_entries(consistency["recent_changes"][-5:]), 0.13),
+        ("Recent Decisions", read_excerpt(context_dir / "decisions.md", maximum, from_end=True), 0.06),
+        ("Recent Findings", read_excerpt(context_dir / "findings.md", maximum, from_end=True), 0.06),
+    ]
+    return render_budgeted_resume(manifest, maximum, sections)
+
+
+def verify(
+    context_dir: Path,
+    ignore_transaction: bool = False,
+    expected_root: Path | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    if not ignore_transaction and (context_dir / ".transaction.json").exists():
+        errors.append("incomplete ledger transaction exists")
+    for name in REQUIRED_FILES:
+        path = context_dir / name
+        if not path.is_file():
+            errors.append(f"missing required file: {name}")
+
+    if errors:
+        return errors
+
+    try:
+        manifest = read_json(context_dir / "manifest.json")
+    except ValueError as exc:
+        return [str(exc)]
+
+    for key in (
+        "version",
+        "task_id",
+        "task",
+        "status",
+        "checkpoint",
+        "requirements_revision",
+        "last_change_id",
+        "last_event_id",
+        "recorded_requirements_hash",
+        "checkpoint_hashes",
+        "updated_at",
+        "root",
+    ):
+        if key not in manifest:
+            errors.append(f"manifest missing key: {key}")
+    if manifest.get("version", 0) < LEDGER_VERSION:
+        errors.append(f"ledger requires migration to version {LEDGER_VERSION}")
+    task_id = str(manifest.get("task_id", "")).strip()
+    if not TASK_ID_PATTERN.fullmatch(task_id):
+        errors.append("manifest task_id must be a 32-character lowercase hexadecimal id")
+    try:
+        manifest_root = canonical_path(manifest.get("root"), "manifest root")
+        actual_root = context_dir.resolve().parent
+        if manifest_root != actual_root:
+            errors.append("manifest root does not match the ledger's actual project root")
+        if expected_root is not None and manifest_root != expected_root.resolve():
+            errors.append("ledger belongs to a different project root")
+    except ValueError as exc:
+        errors.append(str(exc))
+    if manifest.get("status") not in {"active", "blocked", "complete"}:
+        errors.append("manifest status must be active, blocked, or complete")
+    if not isinstance(manifest.get("checkpoint"), int) or manifest.get("checkpoint", -1) < 0:
+        errors.append("manifest checkpoint must be a non-negative integer")
+
+    expected_titles = {
+        "task.md": "# Task Execution",
+        "requirements.md": "# Current Requirements",
+        "findings.md": "# Findings",
+        "decisions.md": "# Decisions",
+        "handoff.md": "# Resume Brief",
+    }
+    for name, title in expected_titles.items():
+        if not (context_dir / name).read_text(encoding="utf-8").startswith(title):
+            errors.append(f"{name} must start with {title!r}")
+    task_text = (context_dir / "task.md").read_text(encoding="utf-8")
+    _, task_sections = markdown_sections(task_text)
+    allowed_task_sections = {"Requirements Reference", "Execution Plan", "Execution Notes"}
+    unexpected_task_sections = sorted({name for name, _ in task_sections} - allowed_task_sections)
+    if unexpected_task_sections:
+        errors.append("task.md contains non-execution sections: " + ", ".join(unexpected_task_sections))
+    requirements_text = (context_dir / "requirements.md").read_text(encoding="utf-8")
+    objective = requirements_objective(requirements_text)
+    if not objective:
+        errors.append("requirements.md must contain a non-empty Objective section")
+    elif objective != manifest.get("task"):
+        errors.append("manifest task does not match requirements Objective")
+    document_revision = requirements_document_revision(requirements_text)
+    if document_revision != manifest.get("requirements_revision"):
+        errors.append("requirements.md revision does not match manifest")
+    if file_hash(context_dir / "requirements.md") != manifest.get("recorded_requirements_hash"):
+        errors.append("requirements.md contains an unrecorded change")
+
+    handoff_text = (context_dir / "handoff.md").read_text(encoding="utf-8")
+    handoff_requirements_hash = re.search(r"(?m)^- Requirements hash: (.+)$", handoff_text)
+    handoff_task_id = re.search(r"(?m)^- Task ID: (.+)$", handoff_text)
+    handoff_root = re.search(r"(?m)^- Task root: (.+)$", handoff_text)
+    handoff_revision = re.search(r"(?m)^- Requirements revision: (\d+)$", handoff_text)
+    handoff_checkpoint = re.search(r"(?m)^- Checkpoint: (\d+)$", handoff_text)
+    if not handoff_requirements_hash or handoff_requirements_hash.group(1).strip() != str(manifest.get("recorded_requirements_hash", "")):
+        errors.append("handoff requirements hash does not match manifest")
+    if not handoff_task_id or handoff_task_id.group(1).strip() != task_id:
+        errors.append("handoff task_id does not match manifest")
+    try:
+        handoff_root_matches = bool(handoff_root) and canonical_path(handoff_root.group(1), "handoff root") == canonical_path(manifest.get("root"), "manifest root")
+    except ValueError:
+        handoff_root_matches = False
+    if not handoff_root_matches:
+        errors.append("handoff root does not match manifest")
+    if not handoff_revision or int(handoff_revision.group(1)) != int(manifest.get("requirements_revision", -1)):
+        errors.append("handoff requirements revision does not match manifest")
+    if not handoff_checkpoint or int(handoff_checkpoint.group(1)) != int(manifest.get("checkpoint", -1)):
+        errors.append("handoff checkpoint does not match manifest")
+
+    checkpoint_count = 0
+    for number, line in enumerate((context_dir / "history.jsonl").read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            errors.append(f"history.jsonl has invalid JSON on line {number}")
+            continue
+        if isinstance(entry, dict) and entry.get("kind") == "checkpoint":
+            checkpoint_count += 1
+    if checkpoint_count != manifest.get("checkpoint"):
+        errors.append("manifest checkpoint does not match history checkpoint count")
+
+    change_revision = 0
+    previous_event_hash = ""
+    last_event_id = ""
+    last_change_id = ""
+    last_requirement_hash = ""
+    seen_ids: set[str] = set()
+    for number, line in enumerate((context_dir / "changes.jsonl").read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            errors.append(f"changes.jsonl has invalid JSON on line {number}")
+            continue
+        if not isinstance(entry, dict):
+            errors.append(f"changes.jsonl entry on line {number} must be an object")
+            continue
+        event_id = entry.get("id")
+        if not isinstance(event_id, str) or not event_id:
+            errors.append(f"changes.jsonl entry on line {number} is missing an id")
+        elif event_id in seen_ids:
+            errors.append(f"changes.jsonl has duplicate id on line {number}")
+        else:
+            seen_ids.add(event_id)
+            last_event_id = event_id
+        if entry.get("previous_event_hash", "") != previous_event_hash:
+            errors.append(f"changes.jsonl hash chain is broken on line {number}")
+        expected_event_hash = change_event_hash(entry)
+        if entry.get("event_hash") != expected_event_hash:
+            errors.append(f"changes.jsonl event hash is invalid on line {number}")
+        previous_event_hash = str(entry.get("event_hash", ""))
+        if entry.get("kind") == "task_started":
+            if entry.get("revision") != 0:
+                errors.append(f"task_started revision must be 0 on line {number}")
+            last_change_id = str(event_id or "")
+            after = entry.get("requirements_after")
+            if not isinstance(after, str):
+                errors.append(f"task_started requirements snapshot is missing on line {number}")
+            elif entry.get("requirements_hash") != sha256_text(after):
+                errors.append(f"task_started requirements hash is invalid on line {number}")
+            elif isinstance(after, str):
+                last_requirement_hash = str(entry.get("requirements_hash"))
+        if entry.get("kind") == "requirement_change":
+            before = entry.get("before_revision")
+            revision = entry.get("after_revision")
+            if before != change_revision or not isinstance(revision, int) or revision != change_revision + 1:
+                errors.append(f"changes.jsonl has a broken requirement revision chain on line {number}")
+            else:
+                change_revision = revision
+            last_change_id = str(event_id or "")
+            after = entry.get("requirements_after")
+            if not isinstance(after, str):
+                errors.append(f"requirement snapshot is missing on line {number}")
+            elif isinstance(after, str) and entry.get("requirements_hash") != sha256_text(after):
+                errors.append(f"requirement snapshot hash is invalid on line {number}")
+            elif isinstance(after, str):
+                last_requirement_hash = str(entry.get("requirements_hash"))
+    if change_revision != manifest.get("requirements_revision"):
+        errors.append("manifest requirements revision does not match changes.jsonl")
+    if last_event_id != manifest.get("last_event_id"):
+        errors.append("manifest last_event_id does not match changes.jsonl")
+    if last_change_id != manifest.get("last_change_id"):
+        errors.append("manifest last_change_id does not match changes.jsonl")
+    if last_requirement_hash and last_requirement_hash != manifest.get("recorded_requirements_hash"):
+        errors.append("latest requirement event hash does not match current requirements")
+    if manifest.get("status") == "complete":
+        verification_match = re.search(
+            r"(?ms)^## Verification\s*\n(.*?)(?:\n## |\Z)",
+            handoff_text,
+        )
+        if not verification_match or not verification_match.group(1).strip() or verification_match.group(1).strip().startswith("Not provided"):
+            errors.append("complete ledger must contain verification evidence in handoff")
+        acceptance = requirements_section(requirements_text, "Acceptance Standard")
+        if re.search(r"(?m)^\s*- \[ \]", acceptance):
+            errors.append("complete ledger has unfinished Acceptance Standard items")
+    return errors
+
+
+def status(context_dir: Path) -> dict[str, Any]:
+    manifest = read_json(context_dir / "manifest.json")
+    return {
+        "context_dir": str(context_dir),
+        "manifest": manifest,
+        "files": {name: (context_dir / name).stat().st_size for name in REQUIRED_FILES if (context_dir / name).exists()},
+        "verification_errors": verify(context_dir),
+    }
+
+
+def self_test() -> None:
+    with tempfile.TemporaryDirectory(prefix="durable-context-") as temporary:
+        root = Path(temporary)
+        context_dir = root / DEFAULT_DIR
+        started = automatic(
+            root,
+            context_dir,
+            "start",
+            "Verify durable context state handling",
+            "",
+            "",
+            "",
+            "",
+            "active",
+            3000,
+        )
+        automatic(
+            root,
+            context_dir,
+            "checkpoint",
+            "",
+            "Created and checked the ledger.",
+            "Run verification.",
+            "self-test",
+            "",
+            "active",
+            3000,
+        )
+        changed = automatic(
+            root,
+            context_dir,
+            "change",
+            task="",
+            summary="Review standard changed.",
+            next_action="Tests must use the revised standard.",
+            verified="",
+            risks="",
+            status="active",
+            maximum=3000,
+            category="acceptance",
+            source="self-test",
+            impact="verification behavior changes",
+            requirements="# Current Requirements\n\n## Objective\nVerify durable context state handling\n\n## Acceptance Standard\n- [x] Preserve revision history.\n\n## Current Route\n- [ ] Run verification.\n\n## Revision Log\n",
+        )
+        pending = reconcile(context_dir)
+        automatic(
+            root,
+            context_dir,
+            "checkpoint",
+            "",
+            "Captured the revised standard.",
+            "Run final verification.",
+            "self-test",
+            "",
+            "active",
+            3000,
+        )
+        errors = verify(context_dir)
+        output = resume(context_dir, 3000)
+        try:
+            resume(context_dir, 100)
+        except ValueError:
+            rejected_small_budget = True
+        else:
+            rejected_small_budget = False
+        if (
+            errors
+            or not rejected_small_budget
+            or not changed["change"].get("after_revision") == 1
+            or not pending["warnings"]
+            or "Captured the revised standard." not in output
+        ):
+            raise RuntimeError(f"self-test failed: {errors}")
+
+    with tempfile.TemporaryDirectory(prefix="durable-context-adversarial-") as temporary:
+        root = Path(temporary)
+        context_dir = root / DEFAULT_DIR
+        automatic(root, context_dir, "start", "Task A", "", "", "", "", "active", 3000)
+        conflict = automatic(root, context_dir, "start", "Task B", "", "", "", "", "active", 3000)
+        if conflict.get("action") != "objective_conflict":
+            raise RuntimeError("self-test failed: active objective mismatch was not blocked")
+        switched = automatic(
+            root,
+            context_dir,
+            "switch",
+            "Task B",
+            "Task A paused for a distinct task.",
+            "Resume Task A only when explicitly requested.",
+            "self-test",
+            "",
+            "active",
+            3000,
+        )
+        if switched.get("action") != "switched_task" or verify(context_dir):
+            raise RuntimeError("self-test failed: explicit task switch did not preserve a valid ledger")
+
+        requirements_path = context_dir / "requirements.md"
+        recorded_requirements = requirements_path.read_text(encoding="utf-8")
+        atomic_write(requirements_path, recorded_requirements + "\nUNRECORDED_CHANGE\n")
+        try:
+            checkpoint(context_dir, "Must fail", "No action", "", "", "active")
+        except ValueError as exc:
+            rejected_unrecorded = "unrecorded requirements change" in str(exc)
+        else:
+            rejected_unrecorded = False
+        if not rejected_unrecorded or (context_dir / ".transaction.json").exists():
+            raise RuntimeError("self-test failed: unrecorded requirements change was accepted")
+        atomic_write(requirements_path, recorded_requirements)
+
+        long_snapshot = (
+            "# Current Requirements\n\n## Objective\nTask B\n\n## Acceptance Standard\n"
+            + ("x" * 5000)
+            + "\n\n## Current Route\nLATEST_ROUTE_MARKER\n"
+        )
+        change(context_dir, "Route changed", "route", "self-test", "route", long_snapshot)
+        bounded_resume = resume(context_dir, 1200)
+        if len(bounded_resume) > 1200 or "LATEST_ROUTE_MARKER" not in bounded_resume:
+            raise RuntimeError("self-test failed: structured requirements resume lost the current route")
+        change(context_dir, "Set icon spacing to exactly 8px", "detail", "self-test", "UI detail", "")
+        for number in range(9):
+            checkpoint(context_dir, f"Detail retention checkpoint {number}", "Continue", "self-test", "", "active")
+        if "8px" not in (context_dir / "requirements.md").read_text(encoding="utf-8") or "8px" not in resume(
+            context_dir, 3000
+        ):
+            raise RuntimeError("self-test failed: detail revision disappeared from current context")
+        manifest_backup = (context_dir / "manifest.json").read_text(encoding="utf-8")
+        atomic_write(
+            context_dir / ".transaction.json",
+            json.dumps(
+                {
+                    "id": "self-test-transaction",
+                    "kind": "checkpoint",
+                    "started_at": utc_now(),
+                    "backups": {"manifest.json": manifest_backup},
+                },
+                ensure_ascii=True,
+                indent=2,
+            )
+            + "\n",
+        )
+        atomic_write(context_dir / "manifest.json", "{}\n")
+        recovered = automatic(root, context_dir, "recover", "", "", "", "", "", "active", 3000)
+        if recovered.get("action") != "transaction_recovered" or verify(context_dir):
+            raise RuntimeError("self-test failed: incomplete transaction was not recovered")
+        manifest = read_json(context_dir / "manifest.json")
+        manifest["last_change_id"] = "forged-id"
+        write_manifest(context_dir, manifest)
+        if not any("last_change_id" in error for error in verify(context_dir)):
+            raise RuntimeError("self-test failed: forged change pointer was not detected")
+
+        try:
+            normalize_requirements(
+                "# Current Requirements\n\n## Objective\nA\n\n## Objective\nB\n",
+                0,
+            )
+        except ValueError:
+            duplicate_section_rejected = True
+        else:
+            duplicate_section_rejected = False
+        if not duplicate_section_rejected:
+            raise RuntimeError("self-test failed: duplicate requirements sections were accepted")
+        try:
+            change(context_dir, "bad\n## injected", "detail", "self-test", "", "")
+        except ValueError:
+            heading_injection_rejected = True
+        else:
+            heading_injection_rejected = False
+        if not heading_injection_rejected:
+            raise RuntimeError("self-test failed: detail heading injection was accepted")
+        if not any("different project root" in error for error in verify(context_dir, expected_root=root / "other")):
+            raise RuntimeError("self-test failed: cross-project ledger validation was not enforced")
+
+    with tempfile.TemporaryDirectory(prefix="durable-context-complete-") as temporary:
+        root = Path(temporary)
+        context_dir = root / DEFAULT_DIR
+        automatic(root, context_dir, "start", "Completion validation", "", "", "", "", "active", 3000)
+        accepted = (context_dir / "requirements.md").read_text(encoding="utf-8").replace(
+            "- [ ] Define the completion evidence.", "- [x] Define the completion evidence."
+        )
+        change(context_dir, "Acceptance evidence recorded", "acceptance", "self-test", "", accepted)
+        try:
+            checkpoint(context_dir, "Must reject empty evidence", "No action", "", "", "complete")
+        except ValueError as exc:
+            if "verification evidence" not in str(exc):
+                raise
+        else:
+            raise RuntimeError("self-test failed: complete checkpoint accepted empty evidence")
+        checkpoint(context_dir, "Completion validated", "No further action", "self-test passed", "", "complete")
+        if verify(context_dir):
+            raise RuntimeError("self-test failed: valid complete ledger did not verify")
+    print("self-test passed")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", default=".", help="project root (default: current directory)")
+    parser.add_argument("--dir", default=DEFAULT_DIR, help=f"relative context directory (default: {DEFAULT_DIR})")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    def add_location_arguments(command_parser: argparse.ArgumentParser) -> None:
+        # Accept location flags before or after the subcommand without overriding parent values.
+        command_parser.add_argument("--root", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+        command_parser.add_argument("--dir", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+
+    init_parser = subparsers.add_parser("init", help="create a new ledger")
+    add_location_arguments(init_parser)
+    init_parser.add_argument("--task", required=True, help="task objective")
+
+    checkpoint_parser = subparsers.add_parser("checkpoint", help="record a resumable checkpoint")
+    add_location_arguments(checkpoint_parser)
+    checkpoint_parser.add_argument("--summary", required=True, help="verified progress summary")
+    checkpoint_parser.add_argument("--next-action", required=True, help="single next action")
+    checkpoint_parser.add_argument("--verified", default="", help="test or evidence")
+    checkpoint_parser.add_argument("--risks", default="", help="remaining risks or blockers")
+    checkpoint_parser.add_argument("--status", choices=("active", "blocked", "complete"), default="active")
+
+    status_parser = subparsers.add_parser("status", help="print machine-readable status")
+    add_location_arguments(status_parser)
+    resume_parser = subparsers.add_parser("resume", help="print a compact resume brief")
+    add_location_arguments(resume_parser)
+    resume_parser.add_argument("--max-chars", type=int, default=6000, help="maximum resume output size")
+    verify_parser = subparsers.add_parser("verify", help="validate ledger structure")
+    add_location_arguments(verify_parser)
+    auto_parser = subparsers.add_parser("auto", help=argparse.SUPPRESS)
+    add_location_arguments(auto_parser)
+    auto_parser.add_argument("--event", choices=("start", "recover", "switch", "checkpoint", "change", "reconcile", "finish", "verify"), required=True, help=argparse.SUPPRESS)
+    auto_parser.add_argument("--task", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--summary", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--next-action", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--verified", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--risks", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--status", choices=("active", "blocked", "complete"), default="active", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--max-chars", type=int, default=6000, help=argparse.SUPPRESS)
+    auto_parser.add_argument("--category", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--source", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--impact", default="", help=argparse.SUPPRESS)
+    auto_parser.add_argument("--requirements", default="", help=argparse.SUPPRESS)
+    subparsers.add_parser("self-test", help="run an isolated script self-test")
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    try:
+        if args.command == "self-test":
+            self_test()
+            return 0
+
+        root, context_dir = resolve_context_dir(args.root, args.dir)
+        if args.command == "init":
+            initialize(root, context_dir, require_task(args.task))
+            print(json.dumps({"context_dir": str(context_dir), "status": "initialized"}, ensure_ascii=True))
+            return 0
+
+        if args.command == "auto":
+            payload = automatic(
+                root,
+                context_dir,
+                args.event,
+                args.task,
+                args.summary,
+                args.next_action,
+                args.verified,
+                args.risks,
+                args.status,
+                args.max_chars,
+                args.category,
+                args.source,
+                args.impact,
+                args.requirements,
+            )
+            print(json.dumps(payload, ensure_ascii=True, indent=2))
+            return 0
+
+        if context_dir.is_dir():
+            migrate_ledger(context_dir, root)
+
+        if not context_dir.is_dir():
+            raise ValueError(f"context directory does not exist: {context_dir}")
+
+        if args.command == "checkpoint":
+            checkpoint(
+                context_dir,
+                require_text(args.summary, "summary"),
+                require_text(args.next_action, "next action"),
+                args.verified.strip(),
+                args.risks.strip(),
+                args.status,
+                expected_root=root,
+            )
+            print(json.dumps({"context_dir": str(context_dir), "status": "checkpointed"}, ensure_ascii=True))
+            return 0
+        if args.command == "status":
+            print(json.dumps(status(context_dir), ensure_ascii=True, indent=2))
+            return 0
+        if args.command == "resume":
+            print(resume(context_dir, args.max_chars))
+            return 0
+        if args.command == "verify":
+            errors = verify(context_dir, expected_root=root)
+            if errors:
+                print("\n".join(f"ERROR: {error}" for error in errors), file=sys.stderr)
+                return 1
+            print("ledger is valid")
+            return 0
+    except (OSError, ValueError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

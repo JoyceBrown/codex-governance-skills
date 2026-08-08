@@ -1,0 +1,7 @@
+interface:
+  display_name: "Durable Context"
+  short_description: "Keep long tasks consistent across sessions and workbenches"
+  default_prompt: "Use $durable-context automatically for complex work, compaction recovery, and read-only cross-workbench context; keep ledger lifecycle internal."
+
+policy:
+  allow_implicit_invocation: true
