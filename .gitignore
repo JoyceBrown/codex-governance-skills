@@ -1,0 +1,6 @@
+# Runtime state and locally collected evidence must never be published with the skill.
+.agent-context/
+.runtime/
+ai-experience/
+*.log
+*.tmp
