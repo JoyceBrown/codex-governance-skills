@@ -80,6 +80,8 @@ For non-empty targets:
 5. Identify roadmap, plan, todo, and current-work files that could all appear executable.
 6. Never overwrite an existing file merely to match a template.
 
+For a cold-start continuation, compare the current repository revision, active plan, requirements revision/hash, and generated handoff before using old notes. A missing historical item is an explicit unknown; do not manufacture a prior consensus or repeat a completed research question when a verified receipt exists.
+
 ### 3. Choose the smallest output profile
 
 Use one of the profiles defined in `references/interview-and-profiles.md`:
@@ -108,6 +110,8 @@ Enable the planning-authority module only when at least one signal exists:
 - the user explicitly requests autonomous continuation with controlled stopping conditions
 
 When enabled, read `references/planning-authority.md` completely before proposing artifacts. Use its plain-language questions and migrate existing content conservatively. Do not make users design plan IDs, authority markers, or file routing themselves.
+
+When cross-session recovery, old-project takeover, or competing context files are part of the task, also read `references/context-ownership-and-migration.md`. Use its ownership matrix and `KEEP`/`UPDATE`/`ARCHIVE`/`SUPERSEDE`/`CONFLICT`/`UNKNOWN` classification before moving facts. Keep the active plan and current requirements as the only execution authority; carry IDs and hashes instead of copying whole explanations.
 
 Read `references/plan-navigation.md` only when an approved multi-stage route has demonstrated structural drift across context resets, or a temporary priority branch needs an explicit continuity parent and return target. Treat route coordinates as optional annotations of the active plan; never create another Skill, task list, current-task field, or completion mechanism for them.
 
@@ -264,6 +268,7 @@ Do not claim the project is fully configured when commands, deployment, security
 
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
 - Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
+- Read `references/context-ownership-and-migration.md` when cross-session recovery, old-project takeover, competing context files, or historical research deduplication is present.
 - Read `references/plan-navigation.md` when a validated active plan needs stable long-horizon route coordinates or continuity-parent recovery.
 - Read `references/change-intake-and-agent-handoff.md` when requirements change during work or when a new task, fork, or subagent must continue the work.
 - Read `references/execution-discipline.md` for long-running continuation,
