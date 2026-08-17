@@ -19,13 +19,15 @@ import context_state
 
 
 SERVER_NAME = "durable-context-readonly"
-SERVER_VERSION = "1.0.0"
+SERVER_VERSION = "1.1.0"
 DEFAULT_PROTOCOL_VERSION = "2024-11-05"
 MIN_BUDGET = 1200
 MAX_BUDGET = 16000
 DEFAULT_BUDGET = 6000
 MAX_QUERY_CHARS = 300
 MAX_RESULTS = 20
+DEFAULT_HISTORY = 12
+MAX_HISTORY = 40
 
 
 class ContextAccessError(ValueError):
@@ -260,10 +262,20 @@ class ContextServer:
             "sections": documents,
         }
         if bool(arguments.get("include_history")):
-            result["history"] = self.history(ledger)
+            result["history"] = self.history(
+                ledger,
+                maximum=clamp_integer(arguments.get("max_history"), DEFAULT_HISTORY, 1, MAX_HISTORY),
+            )
+        result["continuity"] = context_state.continuity_snapshot(root, ledger, manifest)
         return text_result(result, maximum)
 
-    def searchable_documents(self, root: Path, ledger: Path, include_history: bool) -> list[dict[str, str]]:
+    def searchable_documents(
+        self,
+        root: Path,
+        ledger: Path,
+        include_history: bool,
+        max_history: int = DEFAULT_HISTORY,
+    ) -> list[dict[str, str]]:
         requirements = (ledger / "requirements.md").read_text(encoding="utf-8")
         handoff = (ledger / "handoff.md").read_text(encoding="utf-8")
         findings = markdown_section((ledger / "findings.md").read_text(encoding="utf-8"), "Verified")
@@ -286,7 +298,7 @@ class ContextServer:
                 }
             )
         if include_history:
-            for item in self.history(ledger, maximum=100):
+            for item in self.history(ledger, maximum=max_history):
                 documents.append(
                     {
                         "source": "history",
@@ -307,10 +319,12 @@ class ContextServer:
         include_history = bool(arguments.get("include_history"))
         limit = clamp_integer(arguments.get("max_results"), 8, 1, MAX_RESULTS)
         maximum = clamp_integer(arguments.get("max_chars"), DEFAULT_BUDGET, MIN_BUDGET, MAX_BUDGET)
+        max_history = clamp_integer(arguments.get("max_history"), DEFAULT_HISTORY, 1, MAX_HISTORY)
         lowered = query.casefold()
         terms = [item for item in re.split(r"\s+", lowered) if item]
         matches: list[tuple[int, dict[str, str]]] = []
-        for document in self.searchable_documents(root, ledger, include_history):
+        documents = self.searchable_documents(root, ledger, include_history, max_history=max_history)
+        for document in documents:
             haystack = f"{document['heading']}\n{document['text']}".casefold()
             score = haystack.count(lowered) * 10
             score += sum(haystack.count(term) for term in terms)
@@ -327,13 +341,49 @@ class ContextServer:
                     "excerpt": context_state.compact_text(item["text"], 700),
                 }
             )
+        matched_terms = {term for term in terms if any(term in f"{item['heading']}\n{item['text']}".casefold() for _, item in matches)}
+        explicit_conflict = any(
+            re.search(r"(?mi)^-\s*status:\s*(?:CONFLICTED|CONFLICT)\s*$", item["text"])
+            for _, item in matches[:limit]
+        )
+        if explicit_conflict:
+            recovery_status = "CONFLICTED"
+            blocking = True
+            next_action = "Stop automatic selection; compare the conflicting sources and record a current decision."
+        elif not results:
+            recovery_status = "BLOCKED_UNCERTAINTY" if bool(arguments.get("blocking_risk")) else "NOT_FOUND"
+            blocking = recovery_status == "BLOCKED_UNCERTAINTY"
+            next_action = (
+                "Treat the missing context as blocking uncertainty; request an exact source or human decision."
+                if blocking
+                else "Do not infer historical facts; continue only with an explicit unknown or provide a narrower query."
+            )
+        elif len(matched_terms) < len(terms):
+            recovery_status = "PARTIAL"
+            blocking = False
+            next_action = "Use only the matched evidence and keep the unresolved portion explicitly unknown."
+        else:
+            recovery_status = "FOUND"
+            blocking = False
+            next_action = "Use the verified result excerpts; do not expand to history unless the current evidence is insufficient."
         result = {
             "authority": "project-local .agent-context ledger",
             "project_root": str(root),
             "metadata": self.metadata(manifest, consistency),
             "include_history": include_history,
+            "status": recovery_status,
+            "searched_scope": ["current-ledger", "verified-project"] + (["explicit-history"] if include_history else []),
+            "budget_used": {
+                "max_chars": maximum,
+                "max_results": limit,
+                "max_history": max_history if include_history else 0,
+                "documents_scanned": len(documents),
+            },
+            "blocking": blocking,
+            "next_action": next_action,
             "results": results,
         }
+        result["continuity"] = context_state.continuity_snapshot(root, ledger, manifest)
         return text_result(result, maximum)
 
     def health(self, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -400,6 +450,7 @@ class ContextServer:
                 "recent_compaction": recent_compaction,
             },
             "plan_navigation": context_state.plan_navigation_view(root),
+            "continuity": context_state.continuity_snapshot(root, ledger, manifest) if manifest and not errors else {},
         }
         return text_result(result, maximum)
 
@@ -424,6 +475,7 @@ class ContextServer:
                         "warnings": consistency.get("warnings", []),
                     }
                 project["plan_navigation"] = context_state.plan_navigation_view(root)
+                project["continuity"] = context_state.continuity_snapshot(root, ledger, manifest) if manifest and not errors else {}
                 projects.append(project)
             except (OSError, ValueError) as exc:
                 projects.append({"project_root": str(root), "valid": False, "errors": [str(exc)]})
@@ -452,6 +504,7 @@ class ContextServer:
                             "uniqueItems": True,
                         },
                         "include_history": {"type": "boolean", "default": False},
+                        "max_history": {"type": "integer", "minimum": 1, "maximum": MAX_HISTORY, "default": DEFAULT_HISTORY},
                         "max_chars": {"type": "integer", "minimum": MIN_BUDGET, "maximum": MAX_BUDGET},
                     },
                     "additionalProperties": False,
@@ -459,7 +512,7 @@ class ContextServer:
             },
             {
                 "name": "search_context",
-                "description": "Search current verified project context. Historical summaries require include_history=true.",
+                "description": "Search current verified project context with bounded FOUND/PARTIAL/NOT_FOUND/CONFLICTED/BLOCKED_UNCERTAINTY status. Historical summaries require include_history=true; an empty result never implies LIKELY_LOST.",
                 "inputSchema": {
                     "type": "object",
                     "required": ["query"],
@@ -467,6 +520,8 @@ class ContextServer:
                         "query": {"type": "string", "minLength": 1, "maxLength": MAX_QUERY_CHARS},
                         "project_root": project_root,
                         "include_history": {"type": "boolean", "default": False},
+                        "max_history": {"type": "integer", "minimum": 1, "maximum": MAX_HISTORY, "default": DEFAULT_HISTORY},
+                        "blocking_risk": {"type": "boolean", "default": False},
                         "max_results": {"type": "integer", "minimum": 1, "maximum": MAX_RESULTS},
                         "max_chars": {"type": "integer", "minimum": MIN_BUDGET, "maximum": MAX_BUDGET},
                     },
@@ -658,8 +713,26 @@ def self_test() -> None:
         if current.get("isError") or "MCP regression" not in str(current):
             raise RuntimeError("self-test failed: current context query")
         searched = server.call_tool("search_context", {"query": "MCP regression", "include_history": False})
-        if searched.get("isError") or '"results": []' in str(searched):
+        searched_data = json.loads(searched["content"][0]["text"])
+        if searched.get("isError") or searched_data.get("status") != "FOUND" or not searched_data.get("results"):
             raise RuntimeError("self-test failed: current context search")
+        missing = server.call_tool("search_context", {"query": "never-present-recovery-marker"})
+        missing_data = json.loads(missing["content"][0]["text"])
+        if (
+            missing.get("isError")
+            or missing_data.get("status") != "NOT_FOUND"
+            or missing_data.get("blocking")
+            or not missing_data.get("searched_scope")
+            or not missing_data.get("next_action")
+        ):
+            raise RuntimeError("self-test failed: bounded NOT_FOUND search contract")
+        blocked = server.call_tool(
+            "search_context",
+            {"query": "never-present-recovery-marker", "blocking_risk": True},
+        )
+        blocked_data = json.loads(blocked["content"][0]["text"])
+        if blocked.get("isError") or blocked_data.get("status") != "BLOCKED_UNCERTAINTY" or not blocked_data.get("blocking"):
+            raise RuntimeError("self-test failed: blocking uncertainty search contract")
         health = server.call_tool("get_context_health", {})
         if health.get("isError") or '"valid": true' not in str(health).lower():
             raise RuntimeError("self-test failed: health query")

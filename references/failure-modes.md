@@ -66,6 +66,24 @@ Symptom: full requirement snapshots or long event objects make the resume output
 
 Response: inject only compact event metadata and allocate bounded sections. Retrieve full snapshots only from disk for explicit historical analysis.
 
+## Recovery Search Loop
+
+Symptom: an empty result triggers new keywords, a new index, another agent, or progressively broader history searches.
+
+Response: follow the fixed recovery tiers in `continuity-recovery.md`, return `NOT_FOUND` with searched scope and consumed budget, and stop. Escalate to `BLOCKED_UNCERTAINTY` only when the missing fact affects a high-risk action.
+
+## Invented Historical Consensus
+
+Symptom: fragments from code, old notes, or model memory are rewritten as a prior decision that cannot be found.
+
+Response: preserve the gap as `NOT_FOUND` or an explicit unknown. A necessary reconstruction must be labeled `RECONSTRUCTED_HYPOTHESIS` and cannot be recorded as a historical decision without human confirmation.
+
+## Repeated Research
+
+Symptom: a new session repeats an already verified vendor, architecture, or policy investigation.
+
+Response: check a matching Research Receipt first. Reuse a current receipt, recheck only expired scope, and stop automatic selection when receipts or sources conflict.
+
 ## Vault Body Drift
 
 Symptom: the project overview, current requirements, revision snapshot, or registry has matching metadata but different content.

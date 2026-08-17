@@ -23,6 +23,10 @@ Expose verified durable-context state to Codex and other MCP-compatible workbenc
 
 Request `include_history=true` only for explicit historical analysis. History returns bounded change/checkpoint summaries rather than full old requirement bodies.
 
+Every `search_context` response includes `status`, `searched_scope`, `budget_used`, `blocking`, and `next_action`. `NOT_FOUND` is a bounded empty result, not proof that history was deleted; `LIKELY_LOST` is never inferred by the server. Pass `blocking_risk=true` only when the missing fact would make a high-risk action unsafe; that returns `BLOCKED_UNCERTAINTY`. `max_history` is capped and history is never searched recursively.
+
+`get_current_context` also returns the compact continuity package: current/recorded baseline, changed fields, decision and finding references, open unknowns, and research receipt references. Treat a `CHANGED` baseline as a rebaseline signal, not as permission to follow stale handoff text.
+
 Request the `navigation` section when a caller needs the optional coordinate from the active root `PLANS.md`. `search_context`, `get_context_health`, and `list_context_projects` expose the same validation state. Valid coordinates are searchable; malformed, mismatched, or stale coordinates are reported as errors without being returned as trusted navigation. Projects with no navigation metadata retain their existing behavior.
 
 Plan navigation is a read-only annotation owned by `PLANS.md`. It does not replace the ledger's current requirements, create another current task, or grant MCP a write path.

@@ -6,6 +6,8 @@
 
 - 项目本地 `.agent-context/` 作为唯一事实源。
 - 自动恢复当前目标、路线、验收标准、约束和下一步。
+- 在新会话、压缩和 handoff 后恢复紧凑的 `CONTINUITY STATUS`：基线哈希、已确认决定/发现引用、未知项和研究 receipt，而不是复制聊天记录。
+- 以固定 Tier 0/1/2 有界恢复和 `FOUND`/`PARTIAL`/`NOT_FOUND`/`CONFLICTED`/`BLOCKED_UNCERTAINTY` 状态防止无界检索、猜测历史和重复研究。
 - 可选读取根目录 `PLANS.md` 中已验证的 `R#:A#/B#/C#` 路线坐标，帮助长任务恢复位置，但不建立第二套计划权威。
 - 通过 requirements revision、内容哈希和 checkpoint 防止旧需求覆盖新需求。
 - 在压缩前后校验 task ID、checkpoint、revision 和 requirements hash。
@@ -71,6 +73,8 @@ Hook 是机械守卫，不负责猜测语义需求。需求变化仍由技能生
 - `get_context_health`
 - `list_context_projects`
 
+搜索结果会附带 `status`、`searched_scope`、`budget_used`、`blocking` 和 `next_action`；空结果不会被误报为历史丢失。
+
 MCP 没有写入、checkpoint 或任务切换接口。所有语义写入必须回到本地 ledger 生命周期。
 
 `get_current_context` 可按需读取 `navigation` 段；搜索、健康检查和项目列表也会显示同一份校验结果。只有有效坐标会被作为导航返回，无效配置只给出错误，不注入坐标。
@@ -96,6 +100,7 @@ py -3 .\scripts\context_state.py self-test
 py -3 .\scripts\context_mcp.py --self-test
 py -3 .\scripts\obsidian_bridge.py self-test
 py -3 -m py_compile .\scripts\context_state.py .\scripts\codex_hook.py .\scripts\context_mcp.py .\scripts\obsidian_bridge.py
+py -3 -m unittest discover -s .\tests -v
 ```
 
 验证真实项目 ledger：

@@ -36,6 +36,8 @@ Store the ledger in `<project>/.agent-context/` by default. Keep it out of versi
 4. Read current repository rules, source, tests, and external state. Do not trust a stale handoff over current files, test output, or user instructions.
 5. If a previous action may have changed external state, inspect authoritative state before retrying it.
 
+For a new session, compaction, handoff, or suspected context loss, read [continuity-recovery.md](references/continuity-recovery.md). Restore the compact `CONTINUITY STATUS` package first; compare its Git, plan, and requirements baseline before following the old next action.
+
 ## Maintain The Ledger Internally
 
 Use each file for one purpose only:
@@ -69,6 +71,10 @@ Reject a checkpoint when the current requirements hash has no matching recorded 
 
 Enforce the requested resume character budget. Include only compact change metadata in the active prompt; keep full before/after requirement snapshots on disk and in explicit historical retrieval.
 
+Use bounded recovery tiers: current ledger first, verified project indexes second, and explicit relevant history last. Return `FOUND`, `PARTIAL`, `NOT_FOUND`, `CONFLICTED`, or `BLOCKED_UNCERTAINTY` with searched scope, budget, blocking state, and next action. Use `LIKELY_LOST` only after an explicit audit proves the authoritative record is unavailable; an empty search is only `NOT_FOUND`. Never recursively launch another recovery agent or broaden retrieval after its fixed stop point.
+
+Before repeating research, check compact Research Receipts in `findings.md`. Reuse a current receipt with the same question and scope, locally recheck an expired receipt, and stop automatic selection on a conflicted receipt. Keep only receipt metadata and source references; do not copy full research or chat history into the ledger.
+
 Use [selection.md](references/selection.md) when choosing an external retrieval or memory system. Use [failure-modes.md](references/failure-modes.md) when continuity has already failed or context quality is degrading.
 
 ## Optional Plan Navigation
@@ -94,6 +100,7 @@ Use the bundled read-only Context MCP when another Codex surface or third-party 
 - Select these tools automatically from the task state; do not require the user to know or invoke their names.
 - Require an exact project-root allowlist and a checkpoint-clean ledger. Refuse stale, tampered, cross-project, or uncheckpointed data.
 - Keep historical retrieval explicit and bounded. Return revision/checkpoint metadata and summaries, not whole historical requirement snapshots by default.
+- On empty, partial, conflicted, or high-risk missing results, return the recovery status, searched scope, consumed budget, blocking flag, and next action. Never fabricate a historical consensus from fragments.
 - Treat MCP output as a read-only view of the project-local ledger. Route every semantic write, requirement change, checkpoint, and task switch back through the Skill-controlled lifecycle.
 - Do not add an MCP write tool, background daemon, SQLite index, or multi-writer broker without measured evidence that the narrower design is insufficient.
 

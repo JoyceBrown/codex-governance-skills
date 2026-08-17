@@ -32,7 +32,22 @@ REQUIRED_FILES = (
 TRACKED_FILES = ("task.md", "requirements.md", "findings.md", "decisions.md", "handoff.md")
 MAX_FIELD_LENGTH = 4000
 MAX_REQUIREMENTS_LENGTH = 12000
-LEDGER_VERSION = 5
+LEDGER_VERSION = 6
+RECOVERY_STATUSES = (
+    "FOUND",
+    "PARTIAL",
+    "NOT_FOUND",
+    "CONFLICTED",
+    "LIKELY_LOST",
+    "BLOCKED_UNCERTAINTY",
+)
+RECOVERY_TIERS = (
+    {"tier": 0, "name": "current-ledger", "scope": ("requirements", "handoff", "task")},
+    {"tier": 1, "name": "verified-project", "scope": ("findings", "decisions", "plan")},
+    {"tier": 2, "name": "explicit-history", "scope": ("changes", "history")},
+)
+MAX_REFERENCE_ITEMS = 12
+RESEARCH_RECEIPT_STATUSES = {"VALID", "EXPIRED", "CONFLICTED", "SUPERSEDED"}
 TASK_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 PLAN_FIELD_RE = re.compile(
     r"^\s*(plan_id|status|authority|current_task_id|latest_change_class|on_complete|route_id|current_route_coordinate|continuity_parent_task_id)\s*:\s*(.*?)\s*$",
@@ -387,6 +402,150 @@ def plan_navigation_view(root: Path) -> dict[str, Any]:
     return result
 
 
+def git_revision(root: Path) -> str | None:
+    """Read the current Git revision without invoking a process or changing state."""
+    git_path = root / ".git"
+    try:
+        if git_path.is_file():
+            pointer = git_path.read_text(encoding="utf-8").strip()
+            if pointer.startswith("gitdir:"):
+                git_path = (root / pointer.split(":", 1)[1].strip()).resolve()
+        head = (git_path / "HEAD").read_text(encoding="utf-8").strip()
+        if head.startswith("ref:"):
+            reference = head.split(":", 1)[1].strip()
+            ref_path = git_path / reference
+            if ref_path.is_file():
+                return ref_path.read_text(encoding="utf-8").strip()[:128] or None
+            packed = git_path / "packed-refs"
+            if packed.is_file():
+                for line in packed.read_text(encoding="utf-8").splitlines():
+                    fields = line.strip().split(" ", 1)
+                    if len(fields) == 2 and fields[1] == reference:
+                        return fields[0][:128] or None
+            return None
+        return head[:128] or None
+    except (OSError, UnicodeError):
+        return None
+
+
+def optional_file_hash(path: Path) -> str | None:
+    try:
+        return file_hash(path) if path.is_file() else None
+    except OSError:
+        return None
+
+
+def _heading_references(text: str, section: str | None = None, maximum: int = MAX_REFERENCE_ITEMS) -> list[str]:
+    body = text
+    if section:
+        body = requirements_section(text, section)
+    references: list[str] = []
+    for line in body.splitlines():
+        match = re.match(r"^###\s+(.+?)\s*$", line)
+        if match:
+            references.append(match.group(1).strip())
+    return references[-maximum:]
+
+
+def research_receipts(context_dir: Path, maximum: int = MAX_REFERENCE_ITEMS) -> list[dict[str, str]]:
+    """Read compact, human-authored research receipts; never treat them as project authority."""
+    path = context_dir / "findings.md"
+    if not path.is_file():
+        return []
+    text = path.read_text(encoding="utf-8")
+    chunks = re.split(r"(?m)(?=^###\s+)", text)
+    receipts: list[dict[str, str]] = []
+    for chunk in chunks:
+        if not re.search(r"(?mi)^-\s*research_id:\s*\S+", chunk):
+            continue
+        item: dict[str, str] = {}
+        for key in (
+            "research_id",
+            "question",
+            "scope",
+            "status",
+            "sources",
+            "conclusion",
+            "decision_ref",
+            "checked_at",
+            "superseded_by",
+        ):
+            match = re.search(rf"(?mi)^-\s*{re.escape(key)}:\s*(.+)$", chunk)
+            if match:
+                item[key] = compact_text(match.group(1).strip(), 240)
+        if item.get("research_id"):
+            item["status"] = item.get("status", "UNKNOWN").upper()
+            if item["status"] not in RESEARCH_RECEIPT_STATUSES:
+                item["status"] = "UNKNOWN"
+            receipts.append(item)
+    return receipts[-maximum:]
+
+
+def continuity_baseline(root: Path, context_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    navigation = plan_navigation_view(root)
+    return {
+        "git_revision": git_revision(root),
+        "plans_hash": optional_file_hash(root / "PLANS.md"),
+        "requirements_hash": manifest.get("recorded_requirements_hash"),
+        "requirements_revision": requirements_revision(manifest),
+        "task_id": manifest.get("task_id"),
+        "current_task": manifest.get("task"),
+        "route_coordinate": navigation.get("current_route_coordinate") if navigation.get("valid") else None,
+        "checkpoint": manifest.get("checkpoint"),
+    }
+
+
+def continuity_snapshot(root: Path, context_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    current = continuity_baseline(root, context_dir, manifest)
+    recorded = manifest.get("continuity_baseline")
+    if not isinstance(recorded, dict) or not recorded:
+        baseline_status = "UNKNOWN"
+        changed_fields: list[str] = []
+    else:
+        compared = ("git_revision", "plans_hash", "requirements_hash", "requirements_revision")
+        changed_fields = [name for name in compared if recorded.get(name) != current.get(name)]
+        baseline_status = "CHANGED" if changed_fields else "UNCHANGED"
+    decisions = _heading_references((context_dir / "decisions.md").read_text(encoding="utf-8"), maximum=MAX_REFERENCE_ITEMS)
+    findings = _heading_references((context_dir / "findings.md").read_text(encoding="utf-8"), section="Verified", maximum=MAX_REFERENCE_ITEMS)
+    unknowns = _heading_references((context_dir / "findings.md").read_text(encoding="utf-8"), section="Open", maximum=MAX_REFERENCE_ITEMS)
+    receipts = research_receipts(context_dir)
+    return {
+        "status": "FOUND",
+        "baseline_status": baseline_status,
+        "changed_fields": changed_fields,
+        "current": current,
+        "recorded": recorded if isinstance(recorded, dict) else {},
+        "confirmed_decision_refs": decisions,
+        "verified_finding_refs": findings,
+        "open_unknowns": unknowns,
+        "research_receipt_refs": [item.get("research_id") for item in receipts if item.get("research_id")],
+        "research_receipts": receipts,
+        "recovery_tier": 0,
+        "searched_scope": ["current-ledger", "verified-project"],
+        "budget_used": {"max_chars": 0, "history_included": False},
+        "blocking": bool(changed_fields),
+        "next_action": (
+            "Reconcile changed baseline fields before editing."
+            if changed_fields
+            else "Continue from the current checkpoint; retrieve history only for a specific unresolved question."
+        ),
+    }
+
+
+def continuity_index(root: Path, context_dir: Path, manifest: dict[str, Any], next_action: str) -> dict[str, Any]:
+    snapshot = continuity_snapshot(root, context_dir, manifest)
+    return {
+        "current_task": manifest.get("task"),
+        "route_coordinate": snapshot["current"].get("route_coordinate"),
+        "checkpoint": snapshot["current"].get("checkpoint"),
+        "confirmed_decision_refs": snapshot["confirmed_decision_refs"],
+        "verified_finding_refs": snapshot["verified_finding_refs"],
+        "open_unknowns": snapshot["open_unknowns"],
+        "research_receipt_refs": snapshot["research_receipt_refs"],
+        "next_action": compact_text(next_action, 600),
+    }
+
+
 def validate_unique_sections(sections: list[tuple[str, str]]) -> None:
     seen: set[str] = set()
     for name, _ in sections:
@@ -662,6 +821,10 @@ def write_manifest(context_dir: Path, manifest: dict[str, Any]) -> None:
 
 
 def render_handoff(manifest: dict[str, Any], summary: str, next_action: str, verified: str, risks: str) -> str:
+    baseline = manifest.get("continuity_baseline")
+    baseline = baseline if isinstance(baseline, dict) else {}
+    index = manifest.get("continuity_index")
+    index = index if isinstance(index, dict) else {}
     return "\n".join(
         (
             "# Resume Brief",
@@ -677,6 +840,17 @@ def render_handoff(manifest: dict[str, Any], summary: str, next_action: str, ver
             f"- Task root: {manifest.get('root', '')}",
             f"- Task ID: {manifest.get('task_id', '')}",
             f"- Updated: {manifest['updated_at']}",
+            "",
+            "## CONTINUITY STATUS",
+            f"- Baseline status: {manifest.get('continuity_status', 'UNKNOWN')}",
+            f"- Git revision: {baseline.get('git_revision') or 'UNKNOWN'}",
+            f"- PLANS hash: {baseline.get('plans_hash') or 'NOT_CONFIGURED'}",
+            f"- Requirements hash: {baseline.get('requirements_hash') or manifest.get('recorded_requirements_hash', '')}",
+            f"- Route coordinate: {index.get('route_coordinate') or 'NONE'}",
+            f"- Confirmed decision refs: {json.dumps(index.get('confirmed_decision_refs', []), ensure_ascii=False)}",
+            f"- Verified finding refs: {json.dumps(index.get('verified_finding_refs', []), ensure_ascii=False)}",
+            f"- Open unknowns: {json.dumps(index.get('open_unknowns', []), ensure_ascii=False)}",
+            f"- Research receipt refs: {json.dumps(index.get('research_receipt_refs', []), ensure_ascii=False)}",
             "",
             "## Last Verified Progress",
             summary,
@@ -836,6 +1010,9 @@ def initialize(root: Path, context_dir: Path, task: str) -> None:
         "last_event_id": start_id,
         "recorded_requirements_hash": sha256_text(requirements),
         "checkpoint_hashes": {},
+        "continuity_baseline": {},
+        "continuity_index": {},
+        "continuity_status": "UNKNOWN",
         "created_at": now,
         "updated_at": now,
         "root": str(root),
@@ -847,6 +1024,14 @@ def initialize(root: Path, context_dir: Path, task: str) -> None:
         atomic_write(context_dir / "findings.md", "# Findings\n\n## Verified\n\n")
         atomic_write(context_dir / "decisions.md", "# Decisions\n\n## Decision Log\n\n")
         atomic_write(context_dir / "changes.jsonl", "")
+        manifest["continuity_baseline"] = continuity_baseline(root, context_dir, manifest)
+        manifest["continuity_status"] = "UNCHANGED"
+        manifest["continuity_index"] = continuity_index(
+            root,
+            context_dir,
+            manifest,
+            "Identify the first concrete phase and update task.md.",
+        )
         atomic_write(
             context_dir / "handoff.md",
             render_handoff(
@@ -937,6 +1122,15 @@ def migrate_ledger(context_dir: Path, expected_root: Path | None = None) -> None
     if "checkpoint_hashes" not in manifest:
         manifest["checkpoint_hashes"] = content_hashes(context_dir)
         changed = True
+    if "continuity_baseline" not in manifest:
+        manifest["continuity_baseline"] = {}
+        changed = True
+    if "continuity_index" not in manifest:
+        manifest["continuity_index"] = {}
+        changed = True
+    if "continuity_status" not in manifest:
+        manifest["continuity_status"] = "UNKNOWN"
+        changed = True
     existing_changes = read_changes(context_dir, maximum=100000)
     if any(not entry.get("event_hash") for entry in existing_changes):
         changed = True
@@ -971,6 +1165,14 @@ def migrate_ledger(context_dir: Path, expected_root: Path | None = None) -> None
             manifest["task"] = objective
             manifest["recorded_requirements_hash"] = file_hash(context_dir / "requirements.md")
             manifest["checkpoint_hashes"] = content_hashes(context_dir)
+            manifest["continuity_baseline"] = continuity_baseline(expected_root or context_dir.parent, context_dir, manifest)
+            manifest["continuity_status"] = "UNCHANGED"
+            manifest["continuity_index"] = continuity_index(
+                expected_root or context_dir.parent,
+                context_dir,
+                manifest,
+                "Validate the current project and continue from the latest verified checkpoint.",
+            )
             manifest["updated_at"] = now
             handoff_path = context_dir / "handoff.md"
             handoff_text = handoff_path.read_text(encoding="utf-8") if handoff_path.is_file() else ""
@@ -986,6 +1188,7 @@ def migrate_ledger(context_dir: Path, expected_root: Path | None = None) -> None
                     else "No prior handoff was available.",
                 ),
             )
+            manifest["checkpoint_hashes"] = content_hashes(context_dir)
             write_manifest(context_dir, manifest)
 
 
@@ -1083,6 +1286,10 @@ def checkpoint(
         manifest["checkpoint"] = int(manifest.get("checkpoint", 0)) + 1
         manifest["status"] = status
         manifest["updated_at"] = utc_now()
+        root = expected_root.resolve() if expected_root else context_dir.parent.resolve()
+        manifest["continuity_baseline"] = continuity_baseline(root, context_dir, manifest)
+        manifest["continuity_status"] = "UNCHANGED"
+        manifest["continuity_index"] = continuity_index(root, context_dir, manifest, next_action)
         write_manifest(context_dir, manifest)
         atomic_write(context_dir / "handoff.md", render_handoff(manifest, summary, next_action, verified, risks))
         append_jsonl(
@@ -1475,6 +1682,8 @@ def resume(context_dir: Path, maximum: int) -> str:
     if maximum < 1200:
         raise ValueError("--max-chars must be at least 1200")
     consistency = reconcile(context_dir)
+    continuity = continuity_snapshot(context_dir.parent, context_dir, manifest)
+    continuity["budget_used"]["max_chars"] = maximum
     consistency_summary = json.dumps(
         {
             "valid": consistency["valid"],
@@ -1487,6 +1696,7 @@ def resume(context_dir: Path, maximum: int) -> str:
     )
     sections = [
         ("Current Requirements", (context_dir / "requirements.md").read_text(encoding="utf-8"), 0.40),
+        ("CONTINUITY STATUS", json.dumps(continuity, ensure_ascii=False, indent=2), 0.18),
         ("Consistency", consistency_summary, 0.12),
         ("Handoff", read_excerpt(context_dir / "handoff.md", maximum), 0.15),
         ("Execution Plan", task_execution_brief(context_dir / "task.md", maximum), 0.08),
@@ -1539,6 +1749,9 @@ def verify(
         "last_event_id",
         "recorded_requirements_hash",
         "checkpoint_hashes",
+        "continuity_baseline",
+        "continuity_index",
+        "continuity_status",
         "updated_at",
         "root",
     ):
@@ -1562,6 +1775,12 @@ def verify(
         errors.append("manifest status must be active, blocked, or complete")
     if not isinstance(manifest.get("checkpoint"), int) or manifest.get("checkpoint", -1) < 0:
         errors.append("manifest checkpoint must be a non-negative integer")
+    if not isinstance(manifest.get("continuity_baseline"), dict):
+        errors.append("manifest continuity_baseline must be an object")
+    if not isinstance(manifest.get("continuity_index"), dict):
+        errors.append("manifest continuity_index must be an object")
+    if manifest.get("continuity_status") not in {"UNKNOWN", "UNCHANGED", "CHANGED"}:
+        errors.append("manifest continuity_status must be UNKNOWN, UNCHANGED, or CHANGED")
 
     expected_titles = {
         "task.md": "# Task Execution",
@@ -1785,6 +2004,8 @@ def self_test() -> None:
             or not changed["change"].get("after_revision") == 1
             or not pending["warnings"]
             or "Captured the revised standard." not in output
+            or "CONTINUITY STATUS" not in output
+            or not isinstance(read_json(context_dir / "manifest.json").get("continuity_baseline"), dict)
             or "Plan Navigation" in started.get("resume", "")
         ):
             raise RuntimeError(f"self-test failed: {errors}")
@@ -1809,10 +2030,13 @@ continuity_parent_task_id: none
 """
         (root / "PLANS.md").write_text(valid_plan, encoding="utf-8")
         navigation = inspect_plan_navigation(root)
+        changed_baseline = continuity_snapshot(root, context_dir, read_json(context_dir / "manifest.json"))
         navigation_resume = resume(context_dir, 3000)
         if (
             not navigation.get("valid")
             or navigation.get("current_route_coordinate") != "R7:A3/B2"
+            or changed_baseline.get("baseline_status") != "CHANGED"
+            or "plans_hash" not in changed_baseline.get("changed_fields", [])
             or "Plan Navigation" not in navigation_resume
             or "R7:A3/B2" not in navigation_resume
         ):
