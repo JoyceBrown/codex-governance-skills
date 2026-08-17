@@ -34,6 +34,16 @@ MAX_FIELD_LENGTH = 4000
 MAX_REQUIREMENTS_LENGTH = 12000
 LEDGER_VERSION = 5
 TASK_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+PLAN_FIELD_RE = re.compile(
+    r"^\s*(plan_id|status|authority|current_task_id|latest_change_class|on_complete|route_id|current_route_coordinate|continuity_parent_task_id)\s*:\s*(.*?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+PLAN_ROUTE_ID_RE = re.compile(r"^R[1-9][0-9]*$")
+PLAN_ROUTE_COORDINATE_RE = re.compile(
+    r"^(?P<route>R[1-9][0-9]*):A(?P<a>[1-9][0-9]*)"
+    r"(?:/B(?P<b>[1-9][0-9]*))?(?:/C(?P<c>[1-9][0-9]*))?$"
+)
+PLAN_MAX_BYTES = 1024 * 1024
 
 
 def utc_now() -> str:
@@ -162,6 +172,219 @@ def markdown_sections(text: str) -> tuple[str, list[tuple[str, str]]]:
     elif body:
         preamble.extend(body)
     return "\n".join(preamble).strip(), sections
+
+
+def plan_fields(text: str) -> dict[str, str]:
+    return {
+        key.lower(): value.strip()
+        for key, value in PLAN_FIELD_RE.findall(text)
+    }
+
+
+def plan_field_duplicates(text: str) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for key, value in PLAN_FIELD_RE.findall(text):
+        values.setdefault(key.lower(), []).append(value.strip())
+    return {key: entries for key, entries in values.items() if len(entries) > 1}
+
+
+def split_plan_table_row(line: str) -> list[str]:
+    value = line.strip()
+    if not value.startswith("|") or not value.endswith("|"):
+        return []
+    return [cell.strip() for cell in value[1:-1].split("|")]
+
+
+def plan_milestones(text: str) -> tuple[list[dict[str, str]], bool]:
+    _, sections = markdown_sections(text)
+    body = next((value for name, value in sections if name.casefold() == "milestones"), "")
+    lines = [line for line in body.splitlines() if line.strip().startswith("|")]
+    if len(lines) < 2:
+        return [], False
+    headers = [re.sub(r"\s+", " ", item.strip().lower()) for item in split_plan_table_row(lines[0])]
+    if "task id" not in headers or "status" not in headers:
+        return [], False
+    coordinate_header = next(
+        (name for name in ("route coordinate", "coordinate") if name in headers),
+        None,
+    )
+    rows: list[dict[str, str]] = []
+    for line in lines[2:]:
+        cells = split_plan_table_row(line)
+        if len(cells) != len(headers):
+            continue
+        row = dict(zip(headers, cells))
+        task_id = row.get("task id", "").strip()
+        status = row.get("status", "").strip().lower()
+        if not task_id or status not in {"pending", "in_progress", "completed", "blocked", "deferred"}:
+            continue
+        rows.append(
+            {
+                "task_id": task_id,
+                "status": status,
+                "coordinate": row.get(coordinate_header, "").strip() if coordinate_header else "",
+            }
+        )
+    return rows, coordinate_header is not None
+
+
+def inspect_plan_navigation(root: Path) -> dict[str, Any]:
+    plan_path = root.resolve() / "PLANS.md"
+    result: dict[str, Any] = {
+        "configured": False,
+        "valid": True,
+        "source": "PLANS.md",
+        "authority": "active exclusive root PLANS.md (read-only navigation)",
+        "errors": [],
+    }
+    if not plan_path.is_file():
+        result["reason"] = "PLANS.md not found"
+        return result
+    try:
+        if plan_path.stat().st_size > PLAN_MAX_BYTES:
+            raise ValueError(f"PLANS.md exceeds {PLAN_MAX_BYTES} bytes")
+        raw = plan_path.read_bytes()
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        result.update({"configured": True, "valid": False, "errors": [str(exc)]})
+        return result
+
+    result["source_hash"] = hashlib.sha256(raw).hexdigest()
+    fields = plan_fields(text)
+    navigation_keys = (
+        "route_id",
+        "current_route_coordinate",
+        "continuity_parent_task_id",
+    )
+    rows, has_coordinate_column = plan_milestones(text)
+    configured = any(fields.get(key, "").strip() for key in navigation_keys)
+    if has_coordinate_column and any(
+        row["coordinate"].strip().lower() not in {"", "none", "-"}
+        for row in rows
+    ):
+        configured = True
+    result["configured"] = configured
+    if not configured:
+        result["reason"] = "plan navigation is not configured"
+        return result
+
+    errors: list[str] = []
+    duplicates = plan_field_duplicates(text)
+    if duplicates:
+        errors.extend(f"duplicate plan field: {name}" for name in sorted(duplicates))
+
+    for name in ("plan_id", "current_task_id", "route_id", "current_route_coordinate", "on_complete"):
+        if not fields.get(name, "").strip():
+            errors.append(f"missing plan navigation field: {name}")
+    if fields.get("status", "").strip().lower() != "active":
+        errors.append("PLANS.md is not active")
+    if fields.get("authority", "").strip().lower() != "exclusive":
+        errors.append("PLANS.md does not have exclusive authority")
+
+    route_id = fields.get("route_id", "").strip()
+    coordinate = fields.get("current_route_coordinate", "").strip()
+    coordinate_match = PLAN_ROUTE_COORDINATE_RE.fullmatch(coordinate)
+    if route_id and not PLAN_ROUTE_ID_RE.fullmatch(route_id):
+        errors.append("invalid route_id")
+    if coordinate and coordinate_match is None:
+        errors.append("invalid current_route_coordinate")
+    elif coordinate_match and route_id and coordinate_match.group("route") != route_id:
+        errors.append("current_route_coordinate does not match route_id")
+
+    current_task = fields.get("current_task_id", "").strip()
+    in_progress = [row for row in rows if row["status"] == "in_progress"]
+    if len(in_progress) != 1:
+        errors.append(f"expected one in_progress milestone, found {len(in_progress)}")
+    elif in_progress[0]["task_id"] != current_task:
+        errors.append("in_progress milestone does not match current_task_id")
+
+    row_by_task = {row["task_id"]: row for row in rows}
+    coordinate_by_task: dict[str, str] = {}
+    seen_coordinates: set[str] = set()
+    if has_coordinate_column:
+        for row in rows:
+            value = row["coordinate"].strip()
+            if value.lower() in {"", "none", "-"}:
+                continue
+            match = PLAN_ROUTE_COORDINATE_RE.fullmatch(value)
+            if match is None:
+                errors.append(f"invalid milestone route coordinate for {row['task_id']}")
+                continue
+            if route_id and match.group("route") != route_id:
+                errors.append(f"milestone route coordinate does not match route_id for {row['task_id']}")
+            if value in seen_coordinates:
+                errors.append("duplicate milestone route coordinate")
+            seen_coordinates.add(value)
+            coordinate_by_task[row["task_id"]] = value
+        if current_task and current_task not in coordinate_by_task:
+            errors.append("current task is missing a milestone route coordinate")
+        elif current_task and coordinate and coordinate_by_task.get(current_task) != coordinate:
+            errors.append("current task milestone coordinate does not match current_route_coordinate")
+
+    continuity_parent = fields.get("continuity_parent_task_id", "").strip()
+    is_continuity = bool(coordinate_match and coordinate_match.group("c"))
+    if is_continuity:
+        if not continuity_parent or continuity_parent.lower() in {"none", "-"}:
+            errors.append("continuity work requires continuity_parent_task_id")
+        else:
+            parent = row_by_task.get(continuity_parent)
+            if parent is None:
+                errors.append("continuity parent is not in Milestones")
+            elif parent["status"] not in {"deferred", "blocked"}:
+                errors.append("continuity parent is not deferred or blocked")
+            if fields.get("on_complete", "").strip() != f"resume:{continuity_parent}":
+                errors.append("continuity on_complete does not resume its parent task")
+        if fields.get("latest_change_class", "").strip().lower() != "priority_branch":
+            errors.append("continuity work is not classified as priority_branch")
+    elif continuity_parent and continuity_parent.lower() not in {"none", "-"}:
+        errors.append("continuity_parent_task_id is set outside a C coordinate")
+
+    if errors:
+        result.update({"valid": False, "errors": sorted(set(errors))})
+        return result
+    result.update(
+        {
+            "plan_id": fields["plan_id"],
+            "route_id": route_id,
+            "current_task_id": current_task,
+            "current_route_coordinate": coordinate,
+            "continuity_parent_task_id": (
+                continuity_parent
+                if continuity_parent and continuity_parent.lower() not in {"none", "-"}
+                else None
+            ),
+            "on_complete": fields["on_complete"],
+        }
+    )
+    return result
+
+
+def plan_navigation_view(root: Path) -> dict[str, Any]:
+    navigation = inspect_plan_navigation(root)
+    result: dict[str, Any] = {
+        "configured": bool(navigation.get("configured")),
+        "valid": bool(navigation.get("valid")),
+        "source": navigation.get("source"),
+        "authority": navigation.get("authority"),
+    }
+    if not navigation.get("configured"):
+        result["reason"] = navigation.get("reason", "plan navigation is not configured")
+        return result
+    if not navigation.get("valid"):
+        result["errors"] = list(navigation.get("errors", []))
+        return result
+    for key in (
+        "source_hash",
+        "plan_id",
+        "route_id",
+        "current_task_id",
+        "current_route_coordinate",
+        "continuity_parent_task_id",
+        "on_complete",
+    ):
+        if navigation.get(key) is not None:
+            result[key] = navigation[key]
+    return result
 
 
 def validate_unique_sections(sections: list[tuple[str, str]]) -> None:
@@ -1271,6 +1494,16 @@ def resume(context_dir: Path, maximum: int) -> str:
         ("Recent Decisions", read_excerpt(context_dir / "decisions.md", maximum, from_end=True), 0.06),
         ("Recent Findings", read_excerpt(context_dir / "findings.md", maximum, from_end=True), 0.06),
     ]
+    navigation = plan_navigation_view(context_dir.parent)
+    if navigation.get("configured"):
+        sections.insert(
+            1,
+            (
+                "Plan Navigation",
+                json.dumps(navigation, ensure_ascii=False, indent=2),
+                0.10,
+            ),
+        )
     return render_budgeted_resume(manifest, maximum, sections)
 
 
@@ -1552,8 +1785,77 @@ def self_test() -> None:
             or not changed["change"].get("after_revision") == 1
             or not pending["warnings"]
             or "Captured the revised standard." not in output
+            or "Plan Navigation" in started.get("resume", "")
         ):
             raise RuntimeError(f"self-test failed: {errors}")
+
+        valid_plan = """# Active Execution Plan
+
+plan_id: PLAN-01
+status: active
+authority: exclusive
+current_task_id: TASK-01
+latest_change_class: task_adjustment
+on_complete: wait
+route_id: R7
+current_route_coordinate: R7:A3/B2
+continuity_parent_task_id: none
+
+## Milestones
+
+| Task ID | Status | Route coordinate | Outcome |
+| --- | --- | --- | --- |
+| TASK-01 | in_progress | R7:A3/B2 | Verify the route. |
+"""
+        (root / "PLANS.md").write_text(valid_plan, encoding="utf-8")
+        navigation = inspect_plan_navigation(root)
+        navigation_resume = resume(context_dir, 3000)
+        if (
+            not navigation.get("valid")
+            or navigation.get("current_route_coordinate") != "R7:A3/B2"
+            or "Plan Navigation" not in navigation_resume
+            or "R7:A3/B2" not in navigation_resume
+        ):
+            raise RuntimeError("self-test failed: valid plan navigation was not restored")
+
+        invalid_plan = valid_plan.replace("route_id: R7", "route_id: R8")
+        (root / "PLANS.md").write_text(invalid_plan, encoding="utf-8")
+        invalid_navigation = inspect_plan_navigation(root)
+        invalid_resume = resume(context_dir, 3000)
+        if (
+            invalid_navigation.get("valid")
+            or not invalid_navigation.get("errors")
+            or '\"current_route_coordinate\": \"R7:A3/B2\"' in invalid_resume
+        ):
+            raise RuntimeError("self-test failed: invalid plan navigation was trusted")
+
+        continuity_plan = """# Active Execution Plan
+
+plan_id: PLAN-01
+status: active
+authority: exclusive
+current_task_id: login-fix
+latest_change_class: priority_branch
+on_complete: resume:android-session-recovery
+route_id: R7
+current_route_coordinate: R7:A3/B2/C1
+continuity_parent_task_id: android-session-recovery
+
+## Milestones
+
+| Task ID | Status | Route coordinate | Outcome |
+| --- | --- | --- | --- |
+| android-session-recovery | deferred | R7:A3/B2 | Resume the Android session. |
+| login-fix | in_progress | R7:A3/B2/C1 | Repair login first. |
+"""
+        (root / "PLANS.md").write_text(continuity_plan, encoding="utf-8")
+        continuity_navigation = inspect_plan_navigation(root)
+        if (
+            not continuity_navigation.get("valid")
+            or continuity_navigation.get("continuity_parent_task_id") != "android-session-recovery"
+            or continuity_navigation.get("on_complete") != "resume:android-session-recovery"
+        ):
+            raise RuntimeError("self-test failed: valid continuity navigation was rejected")
 
     with tempfile.TemporaryDirectory(prefix="durable-context-adversarial-") as temporary:
         root = Path(temporary)

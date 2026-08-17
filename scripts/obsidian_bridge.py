@@ -17,6 +17,7 @@ from typing import Any
 from context_state import (
     automatic,
     atomic_write,
+    plan_navigation_view,
     read_changes,
     read_excerpt,
     read_json,
@@ -394,6 +395,17 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
         problems = consistency["errors"] + consistency["warnings"]
         raise ValueError("refusing to sync an inconsistent project ledger: " + "; ".join(problems))
     consistency_status = "verified"
+    navigation = plan_navigation_view(project_root)
+    navigation_metadata: dict[str, Any] = {}
+    if navigation.get("configured") and navigation.get("valid"):
+        navigation_metadata = {
+            "plan_route_id": navigation.get("route_id"),
+            "plan_route_coordinate": navigation.get("current_route_coordinate"),
+            "plan_current_task_id": navigation.get("current_task_id"),
+            "plan_continuity_parent_task_id": navigation.get("continuity_parent_task_id"),
+            "plan_source_hash": navigation.get("source_hash"),
+            "plan_navigation_authority": navigation.get("authority"),
+        }
     archived_projection = archive_projection(project_dir, str(manifest.get("task_id", "unknown")))
 
     handoff = read_excerpt(context_dir / "handoff.md", 12000)
@@ -430,6 +442,19 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
     project_body += "## Current Handoff\n\n"
     project_body += handoff
     project_body += "\n\n## Consistency\n\nNo pending consistency warnings.\n"
+    if navigation.get("configured") and navigation.get("valid"):
+        project_body += "\n## Plan Navigation\n\n"
+        project_body += "Read-only projection from the active root `PLANS.md`; it does not authorize work.\n\n"
+        project_body += f"- Route: `{navigation.get('route_id')}`\n"
+        project_body += f"- Coordinate: `{navigation.get('current_route_coordinate')}`\n"
+        project_body += f"- Plan task: `{navigation.get('current_task_id')}`\n"
+        if navigation.get("continuity_parent_task_id"):
+            project_body += f"- Continuity parent: `{navigation.get('continuity_parent_task_id')}`\n"
+        project_body += f"- Source hash: `{navigation.get('source_hash')}`\n"
+    elif navigation.get("configured"):
+        project_body += "\n## Plan Navigation\n\n"
+        project_body += "Navigation metadata was not projected because `PLANS.md` failed validation.\n\n"
+        project_body += "\n".join(f"- {item}" for item in navigation.get("errors", [])) + "\n"
     project_body += "\n## Mirrors\n\n"
     project_body += f"- [[01-项目/{slug}/决策镜像|Decision mirror]]\n"
     project_body += f"- [[01-项目/{slug}/发现镜像|Finding mirror]]\n"
@@ -439,7 +464,7 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
     project_body += f"- [[01-项目/{slug}/一致性检查|Consistency check]]\n"
     if archived_projection:
         project_body += f"\nPrevious task projection archived at `{archived_projection}`.\n"
-    project_page = managed_page({"type": "project-context", **base}, project_body)
+    project_page = managed_page({"type": "project-context", **base, **navigation_metadata}, project_body)
     write_managed(project_dir / "项目上下文.md", project_page)
 
     mirror_base = {**base, "generated": True}
@@ -498,6 +523,8 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
         "updated": updated,
         "synced_at": utc_now(),
     }
+    if navigation_metadata:
+        projects[slug].update(navigation_metadata)
     registry["projects"] = sorted(projects.values(), key=lambda item: (str(item.get("name", "")).lower(), item["slug"]))
     atomic_write(registry_path, json.dumps(registry, ensure_ascii=False, indent=2) + "\n")
 
@@ -518,7 +545,7 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
             f"- [[01-项目/{item['slug']}/项目上下文|{item['name']}]] - {item['status']} - checkpoint {item['checkpoint']}"
         )
     write_managed(vault / "00-首页/项目索引.md", "\n".join(index_lines))
-    return {
+    result = {
         "vault": str(vault),
         "project": project_root.name,
         "slug": slug,
@@ -529,6 +556,15 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
         "consistency": base["consistency"],
         "archived_projection": archived_projection,
     }
+    result["plan_navigation"] = {
+        "configured": bool(navigation.get("configured")),
+        "valid": bool(navigation.get("valid")),
+    }
+    if navigation_metadata:
+        result["plan_navigation"].update(navigation_metadata)
+    elif navigation.get("configured"):
+        result["plan_navigation"]["errors"] = list(navigation.get("errors", []))
+    return result
 
 
 def sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
@@ -650,7 +686,19 @@ def verify_vault(vault: Path) -> list[str]:
         item = registry_projects.get(slug)
         if not item:
             continue
-        for key in ("task_id", "status", "requirements_revision", "consistency", "requirements_hash"):
+        for key in (
+            "task_id",
+            "status",
+            "requirements_revision",
+            "consistency",
+            "requirements_hash",
+            "plan_route_id",
+            "plan_route_coordinate",
+            "plan_current_task_id",
+            "plan_continuity_parent_task_id",
+            "plan_source_hash",
+            "plan_navigation_authority",
+        ):
             if item.get(key) != metadata.get(key):
                 errors.append(f"registry {key} mismatch for {slug}")
         if str(item.get("root", "")).casefold() != str(metadata.get("project_root", "")).casefold():
@@ -835,6 +883,25 @@ def self_test() -> None:
         automatic(project, ledger, "finish", "", "Old complete", "No action", "self-test", "", "active", 3000)
         sync_project(project, vault)
         automatic(project, ledger, "start", "Current task", "", "", "", "", "active", 3000)
+        valid_plan = """# Active Execution Plan
+
+plan_id: PLAN-01
+status: active
+authority: exclusive
+current_task_id: TASK-01
+latest_change_class: task_adjustment
+on_complete: wait
+route_id: R7
+current_route_coordinate: R7:A3/B2
+continuity_parent_task_id: none
+
+## Milestones
+
+| Task ID | Status | Route coordinate | Outcome |
+| --- | --- | --- | --- |
+| TASK-01 | in_progress | R7:A3/B2 | Verify the route. |
+"""
+        (project / "PLANS.md").write_text(valid_plan, encoding="utf-8")
         current = sync_project(project, vault)
         errors = verify_vault(vault)
         if errors:
@@ -847,6 +914,13 @@ def self_test() -> None:
         ]
         if not current_pages or not all("# Current Requirements" in path.read_text(encoding="utf-8") for path in current_pages):
             raise RuntimeError("current requirements are missing from the project projection")
+        navigation_metadata = read_frontmatter(current_pages[0])
+        if (
+            current["plan_navigation"].get("plan_route_coordinate") != "R7:A3/B2"
+            or navigation_metadata.get("plan_route_coordinate") != "R7:A3/B2"
+            or len(str(navigation_metadata.get("plan_source_hash", ""))) != 64
+        ):
+            raise RuntimeError("valid plan navigation is missing from the project projection")
         requirement_pages = [
             path
             for path in vault.rglob("*.md")
@@ -866,6 +940,32 @@ def self_test() -> None:
             raise RuntimeError("default search returned duplicate current requirement content")
         if search_vault(vault, "Current task", 20):
             raise RuntimeError("search without an explicit project scope was not fail-closed")
+        navigation_hits = search_vault(vault, "R7:A3/B2", 20, project_root=project)
+        if not navigation_hits or navigation_hits[0].get("type") != "project-context":
+            raise RuntimeError("valid plan navigation is not searchable in the project projection")
+
+        registry_path = vault / VAULT_DIRS[-1] / "projects.json"
+        navigation_registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        navigation_registry["projects"][0]["plan_route_coordinate"] = "R7:A3/B9"
+        atomic_write(registry_path, json.dumps(navigation_registry, ensure_ascii=False, indent=2) + "\n")
+        if not any("registry plan_route_coordinate mismatch" in error for error in verify_vault(vault)):
+            raise RuntimeError("vault verification missed a navigation registry mismatch")
+        sync_project(project, vault)
+
+        (project / "PLANS.md").write_text(valid_plan.replace("route_id: R7", "route_id: R8"), encoding="utf-8")
+        invalid_navigation = sync_project(project, vault)
+        invalid_page_metadata = read_frontmatter(current_pages[0])
+        invalid_page_text = current_pages[0].read_text(encoding="utf-8")
+        if (
+            invalid_navigation["plan_navigation"].get("valid")
+            or not invalid_navigation["plan_navigation"].get("errors")
+            or "plan_route_coordinate" in invalid_page_metadata
+            or "plan_source_hash" in invalid_page_metadata
+            or "R7:A3/B2" in invalid_page_text
+        ):
+            raise RuntimeError("invalid plan navigation was projected as trusted metadata")
+        if verify_vault(vault):
+            raise RuntimeError("vault verification failed after rejecting invalid plan navigation")
 
         requirement_pages[0].write_text(
             requirement_pages[0].read_text(encoding="utf-8") + "\nTAMPERED\n",
@@ -900,7 +1000,6 @@ def self_test() -> None:
             3000,
         )
 
-        registry_path = vault / VAULT_DIRS[-1] / "projects.json"
         registry_backup = registry_path.read_text(encoding="utf-8")
         registry_path.write_text("{corrupted", encoding="utf-8")
         try:

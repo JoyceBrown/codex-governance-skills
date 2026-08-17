@@ -6,6 +6,7 @@
 
 - 项目本地 `.agent-context/` 作为唯一事实源。
 - 自动恢复当前目标、路线、验收标准、约束和下一步。
+- 可选读取根目录 `PLANS.md` 中已验证的 `R#:A#/B#/C#` 路线坐标，帮助长任务恢复位置，但不建立第二套计划权威。
 - 通过 requirements revision、内容哈希和 checkpoint 防止旧需求覆盖新需求。
 - 在压缩前后校验 task ID、checkpoint、revision 和 requirements hash。
 - 对项目写入执行一致性守卫；账本无效或需求版本未推进时拒绝写入。
@@ -19,6 +20,7 @@
 3. 先验证再恢复：压缩摘要、旧 handoff 或检索结果都不能单独作为事实来源。
 4. 自动路由：用户不需要记命令；Skill 和 Codex Hook 根据任务状态自动选择恢复、校验和检索路径。
 5. 证据门控：没有真实的并发写入、检索规模或延迟证据时，不引入常驻服务、SQLite 或写入型 MCP。
+6. 坐标只读：`current_task_id` 和 `on_complete` 继续负责执行语义；坐标只标记位置，格式错误或与计划冲突时不会进入可信恢复上下文。
 
 ## 目录
 
@@ -29,7 +31,7 @@ scripts/context_state.py 项目账本、revision、checkpoint 和一致性校验
 scripts/codex_hook.py    SessionStart、UserPromptSubmit、PreToolUse、PreCompact、PostCompact、Stop Hook
 scripts/context_mcp.py   只读 Context MCP（stdio）
 scripts/obsidian_bridge.py Obsidian 投影与受控检索
-references/              MCP、Obsidian、故障模式和检索选择说明
+references/              MCP、Obsidian、计划导航、故障模式和检索选择说明
 examples/                脱敏后的 Hook 和 MCP 配置模板
 ```
 
@@ -71,6 +73,8 @@ Hook 是机械守卫，不负责猜测语义需求。需求变化仍由技能生
 
 MCP 没有写入、checkpoint 或任务切换接口。所有语义写入必须回到本地 ledger 生命周期。
 
+`get_current_context` 可按需读取 `navigation` 段；搜索、健康检查和项目列表也会显示同一份校验结果。只有有效坐标会被作为导航返回，无效配置只给出错误，不注入坐标。
+
 ## Obsidian
 
 Obsidian 是投影层，不是权威记忆库。默认路径仍可通过 `--vault` 指定；建议在不同机器上显式传入 Vault 路径，或设置环境变量：
@@ -80,6 +84,8 @@ $env:DURABLE_CONTEXT_VAULT = 'E:\path\to\上下文系统'
 ```
 
 同步前会拒绝不一致或未 checkpoint 的 ledger。检索默认排除历史、superseded、needs-review、observed 和校验失败的页面。
+
+如果项目启用了可选路线坐标，Obsidian 只投影校验通过的坐标和 `PLANS.md` 内容哈希。坐标无效时会拒绝投影导航字段，Vault 不会成为修复计划冲突的事实源。
 
 ## 自测与验证
 

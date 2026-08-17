@@ -14,6 +14,7 @@ Use `scripts/obsidian_bridge.py` as the internal bridge. It has no third-party P
 - Sync a project after a verified checkpoint or final completion, not on every turn.
 - Sync only the current ledger projection: objective, status, checkpoint, handoff, decisions, and findings.
 - Include the task ID, requirements revision, append-only change log, and consistency result in every generated project projection.
+- Project a plan coordinate and `PLANS.md` source hash only when the optional navigation envelope passes validation. If navigation is configured but invalid, record that it was rejected without copying the coordinate or hash into trusted frontmatter.
 - Keep the complete current `requirements.md` in the canonical current-requirements projection and one historical note for every available revision. The project overview links to the canonical page instead of duplicating its body.
 - When a new task replaces a completed task in the same project, archive the old projection before updating the current page.
 - Search the vault only when the task needs cross-project recall or the user asks for historical context. Exclude history, revision snapshots, inconsistent pages, invalid content hashes, and unverified statuses by default; enable them only for explicit historical or diagnostic retrieval.
@@ -31,6 +32,8 @@ Use `scripts/obsidian_bridge.py` as the internal bridge. It has no third-party P
 Never use an Obsidian note to override current code or an explicit user instruction. Treat stale or conflicting notes as leads that require re-verification.
 
 The current route and acceptance standard have one active source: the project's `requirements.md`. Obsidian mirrors are never a second active requirements source. Older projections are historical and must be marked `superseded`.
+
+An optional route coordinate remains owned by the active root `PLANS.md`. The Obsidian page is only a hash-bound read-only projection and cannot authorize execution or repair a conflicting plan.
 
 ## Internal Operations
 

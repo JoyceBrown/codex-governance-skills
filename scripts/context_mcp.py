@@ -227,7 +227,7 @@ class ContextServer:
         root = self.resolve_root(arguments.get("project_root"))
         ledger, manifest, consistency = self.inspect(root, require_clean=True)
         requested = arguments.get("sections")
-        allowed_sections = {"requirements", "handoff", "findings", "decisions", "execution"}
+        allowed_sections = {"requirements", "handoff", "findings", "decisions", "execution", "navigation"}
         if requested is None:
             sections = ["requirements", "handoff", "findings", "decisions"]
         elif not isinstance(requested, list) or not all(isinstance(item, str) for item in requested):
@@ -238,7 +238,7 @@ class ContextServer:
                 raise ContextAccessError("unknown sections: " + ", ".join(unknown))
             sections = list(dict.fromkeys(requested))
         maximum = clamp_integer(arguments.get("max_chars"), DEFAULT_BUDGET, MIN_BUDGET, MAX_BUDGET)
-        documents: dict[str, str] = {}
+        documents: dict[str, Any] = {}
         if "requirements" in sections:
             documents["requirements"] = (ledger / "requirements.md").read_text(encoding="utf-8").strip()
         if "handoff" in sections:
@@ -251,6 +251,8 @@ class ContextServer:
             documents["active_decisions"] = current_decisions(decisions)
         if "execution" in sections:
             documents["execution"] = context_state.task_execution_brief(ledger / "task.md", maximum)
+        if "navigation" in sections:
+            documents["plan_navigation"] = context_state.plan_navigation_view(root)
         result: dict[str, Any] = {
             "authority": "project-local .agent-context ledger",
             "project_root": str(root),
@@ -261,7 +263,7 @@ class ContextServer:
             result["history"] = self.history(ledger)
         return text_result(result, maximum)
 
-    def searchable_documents(self, ledger: Path, include_history: bool) -> list[dict[str, str]]:
+    def searchable_documents(self, root: Path, ledger: Path, include_history: bool) -> list[dict[str, str]]:
         requirements = (ledger / "requirements.md").read_text(encoding="utf-8")
         handoff = (ledger / "handoff.md").read_text(encoding="utf-8")
         findings = markdown_section((ledger / "findings.md").read_text(encoding="utf-8"), "Verified")
@@ -274,6 +276,15 @@ class ContextServer:
             ("active_decisions", decisions),
         ):
             documents.extend(markdown_chunks(source, text))
+        navigation = context_state.plan_navigation_view(root)
+        if navigation.get("configured") and navigation.get("valid"):
+            documents.append(
+                {
+                    "source": "plan_navigation",
+                    "heading": "Verified plan navigation",
+                    "text": json.dumps(navigation, ensure_ascii=False, indent=2),
+                }
+            )
         if include_history:
             for item in self.history(ledger, maximum=100):
                 documents.append(
@@ -299,7 +310,7 @@ class ContextServer:
         lowered = query.casefold()
         terms = [item for item in re.split(r"\s+", lowered) if item]
         matches: list[tuple[int, dict[str, str]]] = []
-        for document in self.searchable_documents(ledger, include_history):
+        for document in self.searchable_documents(root, ledger, include_history):
             haystack = f"{document['heading']}\n{document['text']}".casefold()
             score = haystack.count(lowered) * 10
             score += sum(haystack.count(term) for term in terms)
@@ -388,6 +399,7 @@ class ContextServer:
                 },
                 "recent_compaction": recent_compaction,
             },
+            "plan_navigation": context_state.plan_navigation_view(root),
         }
         return text_result(result, maximum)
 
@@ -400,8 +412,7 @@ class ContextServer:
                 errors = context_state.verify(ledger, expected_root=root)
                 consistency = context_state.reconcile(ledger, expected_root=root) if not errors else {}
                 manifest = context_state.read_json(ledger / "manifest.json") if not errors else {}
-                projects.append(
-                    {
+                project = {
                         "project_root": str(root),
                         "task_id": manifest.get("task_id"),
                         "status": manifest.get("status"),
@@ -412,7 +423,8 @@ class ContextServer:
                         "errors": errors or consistency.get("errors", []),
                         "warnings": consistency.get("warnings", []),
                     }
-                )
+                project["plan_navigation"] = context_state.plan_navigation_view(root)
+                projects.append(project)
             except (OSError, ValueError) as exc:
                 projects.append({"project_root": str(root), "valid": False, "errors": [str(exc)]})
         return text_result({"projects": projects}, maximum)
@@ -435,7 +447,7 @@ class ContextServer:
                             "type": "array",
                             "items": {
                                 "type": "string",
-                                "enum": ["requirements", "handoff", "findings", "decisions", "execution"],
+                                "enum": ["requirements", "handoff", "findings", "decisions", "execution", "navigation"],
                             },
                             "uniqueItems": True,
                         },
@@ -651,6 +663,66 @@ def self_test() -> None:
         health = server.call_tool("get_context_health", {})
         if health.get("isError") or '"valid": true' not in str(health).lower():
             raise RuntimeError("self-test failed: health query")
+
+        valid_plan = """# Active Execution Plan
+
+plan_id: PLAN-01
+status: active
+authority: exclusive
+current_task_id: TASK-01
+latest_change_class: task_adjustment
+on_complete: wait
+route_id: R7
+current_route_coordinate: R7:A3/B2
+continuity_parent_task_id: none
+
+## Milestones
+
+| Task ID | Status | Route coordinate | Outcome |
+| --- | --- | --- | --- |
+| TASK-01 | in_progress | R7:A3/B2 | Verify the route. |
+"""
+        (root / "PLANS.md").write_text(valid_plan, encoding="utf-8")
+        current_navigation = server.call_tool("get_current_context", {"sections": ["navigation"]})
+        current_navigation_data = json.loads(current_navigation["content"][0]["text"])
+        navigation_view = current_navigation_data["sections"]["plan_navigation"]
+        if (
+            current_navigation.get("isError")
+            or navigation_view.get("current_route_coordinate") != "R7:A3/B2"
+            or len(str(navigation_view.get("source_hash", ""))) != 64
+        ):
+            raise RuntimeError("self-test failed: current navigation query")
+        navigation_search = server.call_tool("search_context", {"query": "R7:A3/B2"})
+        navigation_search_data = json.loads(navigation_search["content"][0]["text"])
+        if (
+            navigation_search.get("isError")
+            or not navigation_search_data.get("results")
+            or navigation_search_data["results"][0].get("source") != "plan_navigation"
+        ):
+            raise RuntimeError("self-test failed: verified navigation search")
+        navigation_health = json.loads(server.call_tool("get_context_health", {})["content"][0]["text"])
+        if navigation_health["plan_navigation"].get("current_route_coordinate") != "R7:A3/B2":
+            raise RuntimeError("self-test failed: navigation health")
+        navigation_projects = json.loads(server.call_tool("list_context_projects", {})["content"][0]["text"])
+        if navigation_projects["projects"][0]["plan_navigation"].get("current_route_coordinate") != "R7:A3/B2":
+            raise RuntimeError("self-test failed: project navigation summary")
+
+        (root / "PLANS.md").write_text(valid_plan.replace("route_id: R7", "route_id: R8"), encoding="utf-8")
+        invalid_navigation = server.call_tool("get_current_context", {"sections": ["navigation"]})
+        invalid_navigation_data = json.loads(invalid_navigation["content"][0]["text"])
+        invalid_view = invalid_navigation_data["sections"]["plan_navigation"]
+        if (
+            invalid_navigation.get("isError")
+            or invalid_view.get("valid")
+            or not invalid_view.get("errors")
+            or "current_route_coordinate" in invalid_view
+        ):
+            raise RuntimeError("self-test failed: invalid navigation was exported as trusted")
+        invalid_search = json.loads(
+            server.call_tool("search_context", {"query": "R7:A3/B2"})["content"][0]["text"]
+        )
+        if invalid_search.get("results"):
+            raise RuntimeError("self-test failed: invalid navigation remained searchable")
         resources = server.resources()
         if len(resources) != 2:
             raise RuntimeError("self-test failed: resources were not exposed")

@@ -16,12 +16,16 @@ Expose verified durable-context state to Codex and other MCP-compatible workbenc
 
 | Need | Tool |
 | --- | --- |
-| Restore the current objective, acceptance, route, handoff, findings, or decisions | `get_current_context` |
+| Restore the current objective, acceptance, route, handoff, findings, decisions, or validated plan coordinate | `get_current_context` |
 | Find a specific current project fact | `search_context` |
 | Diagnose stale context, Hook failures, or compaction verification | `get_context_health` |
 | Discover which exact roots this server can read | `list_context_projects` |
 
 Request `include_history=true` only for explicit historical analysis. History returns bounded change/checkpoint summaries rather than full old requirement bodies.
+
+Request the `navigation` section when a caller needs the optional coordinate from the active root `PLANS.md`. `search_context`, `get_context_health`, and `list_context_projects` expose the same validation state. Valid coordinates are searchable; malformed, mismatched, or stale coordinates are reported as errors without being returned as trusted navigation. Projects with no navigation metadata retain their existing behavior.
+
+Plan navigation is a read-only annotation owned by `PLANS.md`. It does not replace the ledger's current requirements, create another current task, or grant MCP a write path.
 
 ## Stdio Definition
 

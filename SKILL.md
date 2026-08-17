@@ -71,6 +71,15 @@ Enforce the requested resume character budget. Include only compact change metad
 
 Use [selection.md](references/selection.md) when choosing an external retrieval or memory system. Use [failure-modes.md](references/failure-modes.md) when continuity has already failed or context quality is degrading.
 
+## Optional Plan Navigation
+
+When the project has an active, exclusive root `PLANS.md` with route coordinates, read [plan-navigation.md](references/plan-navigation.md). Treat the coordinates as a read-only position label, never as plan authority or a ledger replacement.
+
+- Restore a coordinate only after validating the plan envelope, its single `in_progress` task, route ID, milestone mapping, and any continuity-parent return action.
+- Report malformed or conflicting navigation metadata, but never inject its coordinate into a resume, MCP result, or Obsidian projection as trusted context.
+- Leave projects without navigation metadata unchanged. Do not invent coordinates from conversation, ledger text, code structure, or recent activity.
+- Keep `current_task_id` and `on_complete` as the machine execution semantics. Never put an `R#:A#/B#/C#` coordinate in `on_complete`.
+
 ## Obsidian Projection
 
 Use [obsidian.md](references/obsidian.md) when the configured Obsidian Vault exists and the task has verified information worth keeping beyond the active project. Keep the project-local ledger authoritative; project notes in Obsidian are projections, not replacements. Refuse to sync a ledger with any consistency warning. Project projections must include task ID, revision, canonical requirements hash, generated-page content hashes, change log, and consistency result; archive an older task projection before replacing it. Never inject the whole Vault into the prompt.
