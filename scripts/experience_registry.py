@@ -297,6 +297,18 @@ def write_record(store: Path, record: dict[str, Any]) -> Path:
     return path
 
 
+def write_record_if_changed(store: Path, record: dict[str, Any]) -> bool:
+    path = store / "candidates" / f"{record['pattern_id']}.json"
+    try:
+        current = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        current = None
+    if current == record:
+        return False
+    write_record(store, record)
+    return True
+
+
 def records_conflict(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if left.get("problem", "").lower() != right.get("problem", "").lower():
         return False
@@ -580,10 +592,9 @@ def audit_registry(store: Path) -> dict[str, Any]:
             if event:
                 transitions.append(event)
 
-    for record in records:
-        write_record(store, record)
+    rewritten_records = sum(1 for record in records if write_record_if_changed(store, record))
 
-    refreshed = load_records(store)
+    refreshed = records
     promotion_ready = [
         record_summary(record)
         for record in refreshed
@@ -591,6 +602,7 @@ def audit_registry(store: Path) -> dict[str, Any]:
     ]
     return {
         "transitions": transitions,
+        "rewritten_records": rewritten_records,
         "promotion_ready": promotion_ready,
         "pending_evidence": [
             record_summary(record)
@@ -663,12 +675,22 @@ def finalize_run(store: Path, *, run_summary: str = "") -> dict[str, Any]:
         outcome = "evidence-pending"
     else:
         outcome = "no-eligible-experience"
+    groups = ("promotion_ready", "quarantined", "pending_evidence")
+    counts = {name: len(audit[name]) for name in groups}
+    pattern_ids = {
+        name: [str(item.get("pattern_id", "")) for item in audit[name][:40]]
+        for name in groups
+    }
     receipt = {
         "schema_version": 1,
         "finalized_at": utc_now(),
         "outcome": outcome,
         "run_summary": sanitize(run_summary, 600) if run_summary else "",
-        **audit,
+        "counts": counts,
+        "pattern_ids": pattern_ids,
+        "transitions": audit["transitions"][:40],
+        "rewritten_records": audit.get("rewritten_records", 0),
+        "truncated": any(count > 40 for count in counts.values()) or len(audit["transitions"]) > 40,
     }
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%f")
     receipt_path = store / "receipts" / f"RUN-{stamp}.json"
@@ -768,6 +790,8 @@ def relevant(
     project_id = project_fingerprint(project_root)
     wanted_types = set(normalize_values(project_types))
     wanted_signals = set(normalize_values(signals))
+    if not project_id and not wanted_types and not wanted_signals:
+        return []
     matches: list[tuple[int, dict[str, Any]]] = []
 
     for record in load_records(store):

@@ -41,7 +41,7 @@ Infer the mode without asking when the situation is clear:
 
 For an existing repository, resolve `<skill-dir>` to the directory containing this `SKILL.md`, then run `python "<skill-dir>/scripts/inspect_project.py" <project-root>` before proposing files. Treat its output as evidence, then read only the relevant files it identifies. If `scan.complete` is false, rerun with a higher limit or perform targeted reads before inferring that something is absent. Do not infer commands, frameworks, paths, or architecture from naming alone.
 
-After identifying the project type and concrete risk signals, read `references/experience-learning.md` when a private learning registry exists or the user asks the Skill to remember, learn, review experience, or improve itself. Query only matching Shadow or Active patterns. Treat Shadow as verification-only and Active as advisory until repository evidence confirms it. When this module is loaded, finalize its private audit before reporting the run.
+Do not load experience learning merely because a private registry exists. After identifying the project type and concrete risk signals, make one bounded `relevant` query; read `references/experience-learning.md` only when that query returns a matching Shadow or Active pattern, the user asks the Skill to remember or improve, or the current run produces capture-eligible friction. Treat Shadow as verification-only and Active as advisory until repository evidence confirms it. Finalize only runs that actually loaded or changed this module.
 
 ## Run the workflow
 
@@ -130,6 +130,8 @@ Enable experience learning independently from the output profile:
 - `off`: do not capture or suggest experience candidates.
 - `ask`: point out a reusable lesson after real friction and require current confirmation before saving it.
 - `auto_sanitized`: use this default; save structured, sanitized candidates after real failures or user corrections, then automatically audit their private lifecycle.
+
+The default mode does not scan or finalize the registry on an ordinary clean run with no matching signal and no reusable friction.
 
 The registry tool enforces these modes: `off` rejects writes and `ask` requires a current confirmation flag. Sanitization is defense in depth, not proof that arbitrary text is safe; summarize structurally and inspect uncertain content before capture. The private lifecycle automatically moves evidence through Candidate, Shadow, Active, conflict quarantine, and rollback. It never resolves semantic ambiguity by recency alone, never locally overrides a promoted Skill rule, and never edits or publishes the formal Skill. Do not create project documentation merely to support the private registry. Project rules still belong in project-authoritative files.
 

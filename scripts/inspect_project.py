@@ -37,6 +37,7 @@ EXCLUDED_DIRS = {
     "target",
     "vendor",
 }
+DEFAULT_MAX_FILES = 5000
 
 LANGUAGE_EXTENSIONS = {
     ".c": "C",
@@ -338,7 +339,7 @@ def inspect(root: Path, max_files: int) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", nargs="?", default=".", help="Project root to inspect")
-    parser.add_argument("--max-files", type=int, default=20_000)
+    parser.add_argument("--max-files", type=int, default=DEFAULT_MAX_FILES)
     args = parser.parse_args()
 
     root = Path(args.path).expanduser().resolve()

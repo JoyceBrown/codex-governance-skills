@@ -29,6 +29,9 @@ EXCLUDED_DIRS = {
     "target",
     "vendor",
 }
+MAX_MARKDOWN_FILES = 2000
+MAX_MARKDOWN_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_MARKDOWN_FILE_BYTES = 512 * 1024
 
 PLACEHOLDER_RE = re.compile(r"\{\{[A-Z0-9][A-Z0-9_ -]*\}\}")
 MARKDOWN_LINK_RE = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
@@ -149,9 +152,11 @@ def planning_artifact_kind(path: str) -> str | None:
 
 def markdown_files(root: Path) -> list[Path]:
     results: list[Path] = []
+    total_bytes = 0
+    truncated = False
     for current, dirs, names in os.walk(root):
         dirs[:] = sorted(d for d in dirs if d not in EXCLUDED_DIRS)
-        for name in names:
+        for name in sorted(names):
             if not name.lower().endswith(".md"):
                 continue
             path = Path(current) / name
@@ -162,7 +167,23 @@ def markdown_files(root: Path) -> list[Path]:
                 or name in {"AGENTS.md", "AGENTS.override.md"}
                 or planning_artifact_kind(name) is not None
             ):
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    size = 0
+                if (
+                    len(results) >= MAX_MARKDOWN_FILES
+                    or total_bytes + min(size, MAX_MARKDOWN_FILE_BYTES) > MAX_MARKDOWN_TOTAL_BYTES
+                ):
+                    truncated = True
+                    continue
                 results.append(path)
+                total_bytes += min(size, MAX_MARKDOWN_FILE_BYTES)
+    markdown_files.last_scan = {
+        "file_count": len(results),
+        "total_bytes": total_bytes,
+        "truncated": truncated,
+    }
     return sorted(results)
 
 
@@ -995,6 +1016,18 @@ def validate(root: Path, profile: str) -> dict[str, object]:
             errors.append({"code": "missing-required", "path": rel})
 
     files = markdown_files(root)
+    scan = getattr(markdown_files, "last_scan", {})
+    if scan.get("truncated"):
+        warnings.append(
+            {
+                "code": "markdown-scan-truncated",
+                "path": ".",
+                "detail": (
+                    f"bounded scan reached {scan.get('file_count', 0)} files or "
+                    f"{scan.get('total_bytes', 0)} bytes; use targeted review for omitted files"
+                ),
+            }
+        )
     root_literals = {
         str(root),
         root.as_posix(),
@@ -1002,6 +1035,18 @@ def validate(root: Path, profile: str) -> dict[str, object]:
     }
     for path in files:
         rel = path.relative_to(root).as_posix()
+        try:
+            if path.stat().st_size > MAX_MARKDOWN_FILE_BYTES:
+                warnings.append(
+                    {
+                        "code": "oversized-markdown-needs-targeted-review",
+                        "path": rel,
+                        "detail": f"file exceeds {MAX_MARKDOWN_FILE_BYTES} bytes",
+                    }
+                )
+                continue
+        except OSError:
+            pass
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
@@ -1184,6 +1229,8 @@ def validate(root: Path, profile: str) -> dict[str, object]:
         "ok": not errors,
         "summary": {
             "markdown_files": len(files),
+            "markdown_bytes": scan.get("total_bytes", 0),
+            "scan_truncated": bool(scan.get("truncated")),
             "agent_files": len(agent_files),
             "errors": len(errors),
             "warnings": len(warnings),
