@@ -10,6 +10,7 @@
 - 以固定 Tier 0/1/2 有界恢复和 `FOUND`/`PARTIAL`/`NOT_FOUND`/`CONFLICTED`/`BLOCKED_UNCERTAINTY` 状态防止无界检索、猜测历史和重复研究。
 - 可选读取根目录 `PLANS.md` 中已验证的 `R#:A#/B#/C#` 路线坐标，帮助长任务恢复位置，但不建立第二套计划权威。
 - 通过 requirements revision、内容哈希和 checkpoint 防止旧需求覆盖新需求。
+- 对受限源码/配置集合保存聚合项目指纹；源码、PLANS 或账本投影漂移会关闭写入和跨工作台读取门，直到检查并重新 checkpoint。
 - 在压缩前后校验 task ID、checkpoint、revision 和 requirements hash。
 - 对项目写入执行一致性守卫；账本无效或需求版本未推进时拒绝写入。
 - 通过 Obsidian 做可验证的只读投影，通过 Context MCP 提供跨工作台只读读取。
@@ -87,7 +88,9 @@ Obsidian 是投影层，不是权威记忆库。默认路径仍可通过 `--vaul
 $env:DURABLE_CONTEXT_VAULT = 'E:\path\to\上下文系统'
 ```
 
-同步前会拒绝不一致或未 checkpoint 的 ledger。检索默认排除历史、superseded、needs-review、observed 和校验失败的页面。
+同步前会拒绝不一致、基线漂移或未 checkpoint 的 ledger。检索只遍历当前项目投影目录，并默认排除历史、superseded、needs-review、observed 和校验失败的页面；单文件和总结果都有上限。
+
+Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周期白名单要求精确的受信 `context_state.py` 路径，并拒绝 Shell 复合语法。
 
 如果项目启用了可选路线坐标，Obsidian 只投影校验通过的坐标和 `PLANS.md` 内容哈希。坐标无效时会拒绝投影导航字段，Vault 不会成为修复计划冲突的事实源。
 

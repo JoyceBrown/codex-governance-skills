@@ -51,6 +51,15 @@ REQUIRED_VAULT_FILES = (
     "00-首页/项目索引.md",
     "系统/config.json",
 )
+MAX_SEARCH_NOTES = 2000
+MAX_SEARCH_NOTE_BYTES = 512 * 1024
+SECRET_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bAKIA[A-Z0-9]{16}\b"),
+    re.compile(r"(?i)\b(?:api[_-]?key|access[_-]?token|secret|password|passwd)\s*[:=]\s*[^\s,;]+"),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.DOTALL),
+)
 BASE_FILE_CONTENT = {
     "00-首页/上下文系统.md": "# 上下文系统\n\n由 durable-context 管理的 Obsidian 上下文 Vault。项目账本仍是事实源。\n",
     "00-首页/项目索引.md": "# 项目索引\n\n暂无已同步项目。\n",
@@ -370,6 +379,11 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
     if errors:
         raise ValueError("project ledger is invalid: " + "; ".join(errors))
 
+    consistency = reconcile(context_dir, expected_root=project_root)
+    if not consistency["valid"] or consistency.get("blocking") or consistency["warnings"]:
+        problems = consistency["errors"] + consistency.get("warnings", [])
+        raise ValueError("refusing to sync an inconsistent project ledger: " + "; ".join(problems))
+
     ensure_vault(vault)
     manifest = read_json(context_dir / "manifest.json")
     registry_path = vault / VAULT_DIRS[-1] / "projects.json"
@@ -390,10 +404,6 @@ def _sync_project(project_root: Path, vault: Path) -> dict[str, Any]:
     task = str(manifest.get("task", project_root.name))
     status = str(manifest.get("status", "unknown"))
     checkpoint = int(manifest.get("checkpoint", 0))
-    consistency = reconcile(context_dir, expected_root=project_root)
-    if not consistency["valid"] or consistency["warnings"]:
-        problems = consistency["errors"] + consistency["warnings"]
-        raise ValueError("refusing to sync an inconsistent project ledger: " + "; ".join(problems))
     consistency_status = "verified"
     navigation = plan_navigation_view(project_root)
     navigation_metadata: dict[str, Any] = {}
@@ -737,9 +747,25 @@ def search_vault(
     current_task_id = str(manifest.get("task_id", ""))
     max_chars = max(1000, int(max_chars))
     candidates: list[dict[str, Any]] = []
-    for path in sorted(vault.rglob("*.md")):
+    scanned_notes = 0
+    scoped_project_dir = vault / "01-项目" / project_slug(project_root)
+    scoped_paths: list[Path] = []
+    for current, dirs, names in os.walk(scoped_project_dir):
+        dirs[:] = sorted(dirs)
+        scoped_paths.extend(Path(current) / name for name in sorted(names) if name.lower().endswith(".md"))
+        if len(scoped_paths) >= MAX_SEARCH_NOTES:
+            break
+    for path in scoped_paths[:MAX_SEARCH_NOTES]:
+        if scanned_notes >= MAX_SEARCH_NOTES:
+            break
         if ".obsidian" in path.parts:
             continue
+        try:
+            if path.stat().st_size > MAX_SEARCH_NOTE_BYTES:
+                continue
+        except OSError:
+            continue
+        scanned_notes += 1
         relative = path.relative_to(vault)
         is_history = "历史" in relative.parts
         metadata, body = read_markdown_document(path)
@@ -832,6 +858,9 @@ def remember(vault: Path, title: str, kind: str, content: str, scope: str, sourc
     }
     if kind not in roots:
         raise ValueError(f"unsupported kind: {kind}")
+    sensitive = "\n".join((title, content, scope, source, tags))
+    if any(pattern.search(sensitive) for pattern in SECRET_PATTERNS):
+        raise ValueError("refusing to store content that resembles a credential or private key")
     ensure_vault(vault)
     filename = safe_name(title) + ".md"
     path = vault / roots[kind] / filename
@@ -902,6 +931,18 @@ continuity_parent_task_id: none
 | TASK-01 | in_progress | R7:A3/B2 | Verify the route. |
 """
         (project / "PLANS.md").write_text(valid_plan, encoding="utf-8")
+        automatic(
+            project,
+            ledger,
+            "checkpoint",
+            "",
+            "Verified the navigation plan.",
+            "Continue Obsidian projection checks.",
+            "self-test",
+            "",
+            "active",
+            3000,
+        )
         current = sync_project(project, vault)
         errors = verify_vault(vault)
         if errors:
@@ -953,19 +994,28 @@ continuity_parent_task_id: none
         sync_project(project, vault)
 
         (project / "PLANS.md").write_text(valid_plan.replace("route_id: R7", "route_id: R8"), encoding="utf-8")
-        invalid_navigation = sync_project(project, vault)
-        invalid_page_metadata = read_frontmatter(current_pages[0])
-        invalid_page_text = current_pages[0].read_text(encoding="utf-8")
-        if (
-            invalid_navigation["plan_navigation"].get("valid")
-            or not invalid_navigation["plan_navigation"].get("errors")
-            or "plan_route_coordinate" in invalid_page_metadata
-            or "plan_source_hash" in invalid_page_metadata
-            or "R7:A3/B2" in invalid_page_text
-        ):
-            raise RuntimeError("invalid plan navigation was projected as trusted metadata")
-        if verify_vault(vault):
-            raise RuntimeError("vault verification failed after rejecting invalid plan navigation")
+        try:
+            sync_project(project, vault)
+        except ValueError as exc:
+            refused_plan_drift = "baseline drift" in str(exc)
+        else:
+            refused_plan_drift = False
+        if not refused_plan_drift:
+            raise RuntimeError("plan drift was projected before rebaseline")
+        (project / "PLANS.md").write_text(valid_plan, encoding="utf-8")
+        automatic(
+            project,
+            ledger,
+            "checkpoint",
+            "",
+            "Restored the verified navigation plan.",
+            "Continue Obsidian projection checks.",
+            "self-test",
+            "",
+            "active",
+            3000,
+        )
+        sync_project(project, vault)
 
         requirement_pages[0].write_text(
             requirement_pages[0].read_text(encoding="utf-8") + "\nTAMPERED\n",
@@ -1013,6 +1063,13 @@ continuity_parent_task_id: none
         if not refused_corrupt_registry:
             raise RuntimeError(f"bridge did not reject a corrupted project registry: {corrupt_registry_error}")
         registry_path.write_text(registry_backup, encoding="utf-8")
+        try:
+            remember(vault, "credential probe", "inbox", "api_key=sk-abcdefghijklmnopqrstuvwxyz", "project", "self-test", "needs-review", "", False)
+        except ValueError as exc:
+            if "credential" not in str(exc):
+                raise
+        else:
+            raise RuntimeError("bridge stored credential-like content")
     print("obsidian bridge self-test passed")
 
 

@@ -8,6 +8,7 @@ The generated `handoff.md` and `resume` output carry one compact `CONTINUITY STA
 
 - current task, checkpoint, task ID, requirements revision/hash;
 - current Git revision and `PLANS.md` hash when present;
+- a bounded project fingerprint (file count, byte budget, truncation flag, and aggregate digest);
 - validated route coordinate, if the project has plan navigation;
 - references to confirmed decisions, verified findings, open unknowns, and research receipts;
 - one next action and a baseline comparison status.
@@ -49,15 +50,19 @@ Record a small receipt in the `Research Receipts` part of `findings.md` only aft
 - question: the exact question that was checked
 - scope: sources and time boundary
 - status: VALID | EXPIRED | CONFLICTED | SUPERSEDED
+- question_hash: SHA-256 of the exact `question` value
+- scope_hash: SHA-256 of the exact `scope` value
 - sources: source references, not full documents
+- sources_fingerprint: SHA-256 of the exact `sources` value
 - conclusion: one bounded conclusion
 - decision_ref: D-001 or none
 - checked_at: 2026-08-18
+- valid_until: 2026-09-18
 - superseded_by: none
 ```
 
-Before repeating research, look for a `VALID` receipt with the same question and scope. Reuse it when its sources are still within the stated time boundary; otherwise perform a local recheck. A conflicted or superseded receipt cannot authorize an automatic choice.
+Automatic reuse requires `status: VALID`, matching question/scope/source fingerprints, valid timestamps, an unexpired `valid_until`, and no duplicate or conflicting receipt. Missing integrity metadata is `INCOMPLETE` and may be used only as a pointer for local rechecking. A conflicted or superseded receipt cannot authorize an automatic choice.
 
 ## Baseline Drift
 
-At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` means rebaseline and inspect the affected source; it does not mean the implementation is wrong. Do not proceed with a stale or unrecorded requirements hash.
+At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, project_fingerprint, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` closes the write/retrieval gate until the current files are inspected and a trusted checkpoint rebaselines the project; it does not mean the implementation is wrong. Do not proceed with a stale or unrecorded requirements hash.

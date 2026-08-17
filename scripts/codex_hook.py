@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import sys
 import tempfile
 import time
@@ -18,7 +19,7 @@ from typing import Any, Iterator
 import context_state
 
 
-MAX_RESUME_CHARS = 5000
+MAX_RESUME_CHARS = 3600
 MAX_LOG_BYTES = 1024 * 1024
 MAX_STATE_ENTRIES = 128
 STATE_TTL_SECONDS = 24 * 60 * 60
@@ -31,27 +32,17 @@ CHANGE_HINT = re.compile(
     r"修改|改成|改为|重命名|新增|增加|删除|不要|必须|验收|标准|范围|路线|优先级|阶段|开始|继续)",
     re.IGNORECASE,
 )
-WRITE_MARKER = re.compile(
-    r"(?:^|[\s;|&])(?:Set-Content|Add-Content|Out-File|Remove-Item|Move-Item|Copy-Item|"
-    r"New-Item|Rename-Item|mkdir|rmdir|del|erase|move|copy|git\s+(?:add|commit|merge|rebase|"
-    r"cherry-pick|push|tag)|pip\s+install|npm\s+(?:install|uninstall)|codex\s+mcp\s+(?:add|remove))\b|"
-    r"(?:^|\s)(?:>|>>)(?:\s|$)",
-    re.IGNORECASE,
-)
-READ_ONLY_COMMAND = re.compile(
-    r"^\s*(?:Get-Content|Get-ChildItem|Select-String|Resolve-Path|Test-Path|Measure-Object|"
-    r"rg\b|git\s+(?:status|diff|log|show|branch\b)|codex\s+mcp\s+(?:list|get)\b)",
-    re.IGNORECASE,
-)
+SHELL_CONTROL = re.compile(r"[;&|<>`\r\n]|\$\(", re.IGNORECASE)
+READ_ONLY_COMMANDS = {
+    "get-content", "get-childitem", "select-string", "resolve-path", "test-path",
+    "measure-object", "rg",
+}
+LIFECYCLE_EVENTS = {"recover", "change", "reconcile", "verify", "checkpoint"}
 WRITE_TOOL_NAME = re.compile(
     r"(?:^|__|_)(?:write|edit|apply_patch|click|type|input|upload|navigate|new_tab|close|cookies_set|"
     r"evaluate|exec|mouse|mouse_drag|window_activate|window_move|window_resize|clipboard_write|"
     r"clipboard_clean|send|create|update|delete|remove|rename|install|add|computer_use)$",
     re.IGNORECASE,
-)
-LIFECYCLE_REPAIR = re.compile(
-    r"context_state\.py.*(?:--event\s+(?:recover|change|reconcile|verify)|\s(?:verify|status|resume)\b)",
-    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -63,6 +54,15 @@ class HookResult:
     project: tuple[Path, Path] | None
 
 
+def configure_utf8_stdio() -> None:
+    """Keep the JSON hook protocol stable on Windows and Unix alike."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="strict", newline="\n")
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+
 def emit(payload: dict[str, Any]) -> int:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
     sys.stdout.flush()
@@ -70,11 +70,37 @@ def emit(payload: dict[str, Any]) -> int:
 
 
 def input_payload() -> dict[str, Any]:
+    configure_utf8_stdio()
     try:
         value = json.load(sys.stdin)
     except (json.JSONDecodeError, OSError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def shell_tokens(command: str) -> list[str] | None:
+    if not command.strip() or SHELL_CONTROL.search(command):
+        return None
+    try:
+        return [token.strip('"') for token in shlex.split(command, posix=False)]
+    except ValueError:
+        return None
+
+
+def is_read_only_shell(command: str) -> bool:
+    tokens = shell_tokens(command)
+    if not tokens:
+        return False
+    executable = Path(tokens[0]).name.casefold()
+    if executable in READ_ONLY_COMMANDS:
+        if executable == "rg" and any(token.casefold() in {"--pre", "--passthru"} for token in tokens[1:]):
+            return False
+        return True
+    if executable == "git" and len(tokens) > 1:
+        return tokens[1].casefold() in {"status", "diff", "log", "show", "branch"}
+    if executable == "codex" and len(tokens) > 2:
+        return tokens[1].casefold() == "mcp" and tokens[2].casefold() in {"list", "get"}
+    return False
 
 
 def find_project(start: str | None) -> tuple[Path, Path] | None:
@@ -305,26 +331,61 @@ def tool_is_write_capable(payload: dict[str, Any]) -> bool:
         return bool(WRITE_TOOL_NAME.search(tool_name))
     tool_input = payload.get("tool_input")
     command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    if not command:
-        return True
-    if WRITE_MARKER.search(command):
-        return True
-    if READ_ONLY_COMMAND.search(command):
-        return False
-    return True
+    return not is_read_only_shell(command)
 
 
-def is_lifecycle_repair(payload: dict[str, Any]) -> bool:
+def is_lifecycle_repair(payload: dict[str, Any], root: Path, ledger: Path) -> bool:
     if str(payload.get("tool_name") or "") != "Bash":
         return False
     tool_input = payload.get("tool_input")
     command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    normalized = re.sub(r"^\s*&\s*", "", command.strip())
-    if not re.match(r"^(?:py(?:\.exe)?\s+-3|python(?:3|\.exe)?)\s+", normalized, re.IGNORECASE):
+    tokens = shell_tokens(command)
+    if not tokens:
         return False
-    if re.search(r"[;|>\r\n]", normalized):
+    index = 0
+    executable = Path(tokens[index]).name.casefold()
+    if executable in {"py", "py.exe"}:
+        if len(tokens) < 3 or tokens[1] not in {"-3", "-3.11", "-3.12", "-3.13"}:
+            return False
+        index = 2
+    elif executable in {"python", "python.exe", "python3", "python3.exe"}:
+        index = 1
+    else:
         return False
-    return bool(LIFECYCLE_REPAIR.search(normalized))
+    if index >= len(tokens):
+        return False
+    try:
+        script = Path(tokens[index]).expanduser().resolve()
+        trusted = Path(context_state.__file__).resolve()
+    except OSError:
+        return False
+    if script != trusted:
+        return False
+    tokens = tokens[index + 1 :]
+    option_index = 0
+    while option_index < len(tokens) and tokens[option_index].startswith("--"):
+        option = tokens[option_index].casefold()
+        if option not in {"--root", "--dir"} or option_index + 1 >= len(tokens):
+            return False
+        value = tokens[option_index + 1]
+        if option == "--root":
+            try:
+                if Path(value).expanduser().resolve() != root.resolve():
+                    return False
+            except OSError:
+                return False
+        elif Path(value).as_posix().strip("/").casefold() != ledger.name.casefold():
+            return False
+        option_index += 2
+    tokens = tokens[option_index:]
+    if not tokens or tokens[0].casefold() != "auto":
+        return False
+    event = ""
+    for position, token in enumerate(tokens[1:], start=1):
+        if token == "--event" and position + 1 < len(tokens):
+            event = tokens[position + 1].casefold()
+            break
+    return event in LIFECYCLE_EVENTS
 
 
 def handle_session_start(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
@@ -337,7 +398,8 @@ def handle_session_start(payload: dict[str, Any], root: Path, ledger: Path) -> H
             root, ledger, "start", manifest_task(ledger), "", "", "", "", "active", MAX_RESUME_CHARS
         )
         brief = str(result.get("resume", "")).strip()
-        reason = "resume_verified"
+        gate_closed = result.get("action") == "blocked"
+        reason = "resume_blocked" if gate_closed else "resume_verified"
         source = str(payload.get("source") or "")
         if source == "compact":
             before = compaction_snapshot(ledger, payload)
@@ -357,8 +419,17 @@ def handle_session_start(payload: dict[str, Any], root: Path, ledger: Path) -> H
             else:
                 reason = "compact_state_match"
             clear_compaction(ledger, payload)
-        output = additional_context("SessionStart", brief) if brief else {}
-        return HookResult(output, "allow", reason, (root, ledger))
+        if gate_closed:
+            # Compaction metadata matching does not re-authorize a stale project.
+            reason = "resume_blocked"
+        output = additional_context(
+            "SessionStart",
+            brief,
+            "Durable-context recovery gate is closed; only trusted metadata was restored."
+            if reason == "resume_blocked"
+            else "",
+        ) if brief else {}
+        return HookResult(output, "warning" if reason == "resume_blocked" else "allow", reason, (root, ledger))
     except Exception as exc:
         warning = (
             "Durable-context warning: automatic resume was not completed. "
@@ -398,12 +469,24 @@ def handle_user_prompt(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
 def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
     if not tool_is_write_capable(payload):
         return HookResult({}, "allow", "read_only_tool", (root, ledger))
-    if is_lifecycle_repair(payload):
+    if is_lifecycle_repair(payload, root, ledger):
         return HookResult({}, "allow", "lifecycle_repair", (root, ledger))
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
         reason = "Durable-context rejected this write because the project ledger is invalid: " + "; ".join(errors)
         return HookResult(deny_tool(reason), "deny", "invalid_ledger", (root, ledger))
+    consistency = context_state.reconcile(ledger, expected_root=root)
+    if consistency.get("blocking"):
+        reasons = list(dict.fromkeys(
+            [str(item) for item in consistency.get("errors", [])]
+            + [str(item) for item in consistency.get("blocking_warnings", [])]
+        ))
+        reason = (
+            "Durable-context rejected this write because recovery is blocked by current-state drift. "
+            "Inspect the files and record a trusted checkpoint/rebaseline first: "
+            + "; ".join(reasons)
+        )
+        return HookResult(deny_tool(reason), "deny", "recovery_gate", (root, ledger))
     snapshot = ledger_snapshot(root, ledger)
     guard = pending_turn_guard(ledger, payload, snapshot)
     if guard is not None:
@@ -750,6 +833,7 @@ def self_test() -> None:
 
 
 def main() -> int:
+    configure_utf8_stdio()
     if len(sys.argv) > 1 and sys.argv[1] == "--self-test":
         self_test()
         return 0

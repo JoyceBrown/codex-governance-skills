@@ -60,6 +60,37 @@ PLAN_ROUTE_COORDINATE_RE = re.compile(
 )
 PLAN_MAX_BYTES = 1024 * 1024
 
+# The project fingerprint is deliberately bounded.  It detects ordinary source and
+# configuration drift without turning every Hook invocation into a full repository
+# index or storing file contents in the ledger.
+PROJECT_SCAN_EXCLUDED_DIRS = {
+    ".agent-context",
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "coverage",
+    "dist",
+    "node_modules",
+    "target",
+    "vendor",
+}
+PROJECT_SCAN_SUFFIXES = {
+    ".bat", ".c", ".cc", ".cfg", ".cmd", ".conf", ".cpp", ".cs", ".css",
+    ".gradle", ".h", ".hpp", ".html", ".ini", ".java", ".js", ".json",
+    ".jsx", ".kt", ".md", ".mjs", ".ps1", ".py", ".pyi", ".rs", ".scss",
+    ".sh", ".sql", ".svelte", ".swift", ".toml", ".ts", ".tsx", ".txt",
+    ".vue", ".xml", ".yaml", ".yml",
+}
+PROJECT_SCAN_NAMES = {
+    "Dockerfile", "Makefile", "CMakeLists.txt", "Procfile", "requirements.txt",
+}
+PROJECT_SCAN_MAX_FILES = 512
+PROJECT_SCAN_MAX_BYTES = 4 * 1024 * 1024
+PROJECT_SCAN_MAX_FILE_BYTES = 512 * 1024
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -435,6 +466,55 @@ def optional_file_hash(path: Path) -> str | None:
         return None
 
 
+def project_fingerprint(root: Path) -> dict[str, Any]:
+    """Return a bounded aggregate fingerprint for project files likely to affect work."""
+    root = root.resolve()
+    entries: list[str] = []
+    file_count = 0
+    total_bytes = 0
+    truncated = False
+    for current, dirs, names in os.walk(root):
+        dirs[:] = sorted(name for name in dirs if name not in PROJECT_SCAN_EXCLUDED_DIRS)
+        for name in sorted(names):
+            path = Path(current) / name
+            if name not in PROJECT_SCAN_NAMES and path.suffix.lower() not in PROJECT_SCAN_SUFFIXES:
+                continue
+            try:
+                if path.is_symlink() or not path.is_file():
+                    continue
+                size = path.stat().st_size
+                relative = path.relative_to(root).as_posix()
+                if (
+                    file_count >= PROJECT_SCAN_MAX_FILES
+                    or total_bytes + min(size, PROJECT_SCAN_MAX_FILE_BYTES) > PROJECT_SCAN_MAX_BYTES
+                ):
+                    truncated = True
+                    break
+                with path.open("rb") as handle:
+                    if size <= PROJECT_SCAN_MAX_FILE_BYTES:
+                        content = handle.read()
+                    else:
+                        head = handle.read(PROJECT_SCAN_MAX_FILE_BYTES // 2)
+                        handle.seek(max(0, size - PROJECT_SCAN_MAX_FILE_BYTES // 2))
+                        content = head + handle.read(PROJECT_SCAN_MAX_FILE_BYTES // 2)
+                digest = hashlib.sha256(content).hexdigest()
+                entries.append(f"{relative}\0{size}\0{digest}")
+                file_count += 1
+                total_bytes += min(size, PROJECT_SCAN_MAX_FILE_BYTES)
+            except (OSError, UnicodeError, ValueError):
+                truncated = True
+        if truncated:
+            break
+    entries.sort()
+    return {
+        "version": 1,
+        "digest": sha256_text("\n".join(entries)),
+        "file_count": file_count,
+        "total_bytes": total_bytes,
+        "truncated": truncated,
+    }
+
+
 def _heading_references(text: str, section: str | None = None, maximum: int = MAX_REFERENCE_ITEMS) -> list[str]:
     body = text
     if section:
@@ -447,8 +527,26 @@ def _heading_references(text: str, section: str | None = None, maximum: int = MA
     return references[-maximum:]
 
 
-def research_receipts(context_dir: Path, maximum: int = MAX_REFERENCE_ITEMS) -> list[dict[str, str]]:
-    """Read compact, human-authored research receipts; never treat them as project authority."""
+def _receipt_time(value: str, *, end_of_day: bool = False) -> datetime | None:
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            parsed = datetime.fromisoformat(text + "T00:00:00+00:00")
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if end_of_day and "T" not in text:
+        parsed = parsed.replace(hour=23, minute=59, second=59)
+    return parsed.astimezone(timezone.utc)
+
+
+def research_receipts(context_dir: Path, maximum: int = MAX_REFERENCE_ITEMS) -> list[dict[str, Any]]:
+    """Read compact receipts and mark whether they are safe for automatic reuse."""
     path = context_dir / "findings.md"
     if not path.is_file():
         return []
@@ -465,9 +563,14 @@ def research_receipts(context_dir: Path, maximum: int = MAX_REFERENCE_ITEMS) -> 
             "scope",
             "status",
             "sources",
+            "question_hash",
+            "scope_hash",
+            "sources_fingerprint",
+            "source_fingerprint",
             "conclusion",
             "decision_ref",
             "checked_at",
+            "valid_until",
             "superseded_by",
         ):
             match = re.search(rf"(?mi)^-\s*{re.escape(key)}:\s*(.+)$", chunk)
@@ -477,7 +580,59 @@ def research_receipts(context_dir: Path, maximum: int = MAX_REFERENCE_ITEMS) -> 
             item["status"] = item.get("status", "UNKNOWN").upper()
             if item["status"] not in RESEARCH_RECEIPT_STATUSES:
                 item["status"] = "UNKNOWN"
+            validation_errors: list[str] = []
+            if not item.get("question"):
+                validation_errors.append("question missing")
+            elif item.get("question_hash") != sha256_text(item["question"]):
+                validation_errors.append("question_hash missing or mismatched")
+            if not item.get("scope"):
+                validation_errors.append("scope missing")
+            elif item.get("scope_hash") != sha256_text(item["scope"]):
+                validation_errors.append("scope_hash missing or mismatched")
+            if not item.get("sources"):
+                validation_errors.append("sources missing")
+            elif (item.get("sources_fingerprint") or item.get("source_fingerprint")) != sha256_text(item["sources"]):
+                validation_errors.append("sources_fingerprint missing or mismatched")
+            if not item.get("conclusion"):
+                validation_errors.append("conclusion missing")
+            checked_at = _receipt_time(item.get("checked_at", ""))
+            if checked_at is None:
+                validation_errors.append("checked_at invalid")
+            valid_until = _receipt_time(item.get("valid_until", ""), end_of_day=True)
+            if item["status"] == "VALID" and valid_until is None:
+                validation_errors.append("valid_until required for VALID receipt")
+            if item.get("valid_until") and valid_until is None:
+                validation_errors.append("valid_until invalid")
+            validation_status = item["status"]
+            if validation_errors:
+                validation_status = "INCOMPLETE"
+            elif item["status"] == "VALID" and valid_until and valid_until < datetime.now(timezone.utc):
+                validation_status = "EXPIRED"
+            item["validation_status"] = validation_status
+            item["validation_errors"] = "; ".join(validation_errors)
+            item["reusable"] = bool(validation_status == "VALID")
             receipts.append(item)
+    # A duplicate id or one question with incompatible conclusions is a conflict,
+    # regardless of which receipt was written most recently.
+    by_id: dict[str, list[dict[str, Any]]] = {}
+    by_question: dict[str, list[dict[str, Any]]] = {}
+    for item in receipts:
+        by_id.setdefault(str(item.get("research_id")), []).append(item)
+        key = str(item.get("question_hash") or sha256_text(str(item.get("question", ""))))
+        by_question.setdefault(key, []).append(item)
+    for group in by_id.values():
+        if len(group) > 1:
+            for item in group:
+                item["validation_status"] = "CONFLICTED"
+                item["validation_errors"] = "duplicate research_id"
+                item["reusable"] = False
+    for group in by_question.values():
+        conclusions = {str(item.get("conclusion", "")).strip() for item in group}
+        if len(group) > 1 and (len(conclusions) > 1 or len({str(item.get("scope", "")) for item in group}) > 1):
+            for item in group:
+                item["validation_status"] = "CONFLICTED"
+                item["validation_errors"] = "duplicate id or conflicting conclusion/scope"
+                item["reusable"] = False
     return receipts[-maximum:]
 
 
@@ -486,6 +641,7 @@ def continuity_baseline(root: Path, context_dir: Path, manifest: dict[str, Any])
     return {
         "git_revision": git_revision(root),
         "plans_hash": optional_file_hash(root / "PLANS.md"),
+        "project_fingerprint": project_fingerprint(root),
         "requirements_hash": manifest.get("recorded_requirements_hash"),
         "requirements_revision": requirements_revision(manifest),
         "task_id": manifest.get("task_id"),
@@ -502,7 +658,7 @@ def continuity_snapshot(root: Path, context_dir: Path, manifest: dict[str, Any])
         baseline_status = "UNKNOWN"
         changed_fields: list[str] = []
     else:
-        compared = ("git_revision", "plans_hash", "requirements_hash", "requirements_revision")
+        compared = ("git_revision", "plans_hash", "project_fingerprint", "requirements_hash", "requirements_revision")
         changed_fields = [name for name in compared if recorded.get(name) != current.get(name)]
         baseline_status = "CHANGED" if changed_fields else "UNCHANGED"
     decisions = _heading_references((context_dir / "decisions.md").read_text(encoding="utf-8"), maximum=MAX_REFERENCE_ITEMS)
@@ -519,6 +675,9 @@ def continuity_snapshot(root: Path, context_dir: Path, manifest: dict[str, Any])
         "verified_finding_refs": findings,
         "open_unknowns": unknowns,
         "research_receipt_refs": [item.get("research_id") for item in receipts if item.get("research_id")],
+        "reusable_research_receipt_refs": [
+            item.get("research_id") for item in receipts if item.get("reusable") and item.get("research_id")
+        ],
         "research_receipts": receipts,
         "recovery_tier": 0,
         "searched_scope": ["current-ledger", "verified-project"],
@@ -542,6 +701,7 @@ def continuity_index(root: Path, context_dir: Path, manifest: dict[str, Any], ne
         "verified_finding_refs": snapshot["verified_finding_refs"],
         "open_unknowns": snapshot["open_unknowns"],
         "research_receipt_refs": snapshot["research_receipt_refs"],
+        "reusable_research_receipt_refs": snapshot["reusable_research_receipt_refs"],
         "next_action": compact_text(next_action, 600),
     }
 
@@ -845,12 +1005,14 @@ def render_handoff(manifest: dict[str, Any], summary: str, next_action: str, ver
             f"- Baseline status: {manifest.get('continuity_status', 'UNKNOWN')}",
             f"- Git revision: {baseline.get('git_revision') or 'UNKNOWN'}",
             f"- PLANS hash: {baseline.get('plans_hash') or 'NOT_CONFIGURED'}",
+            f"- Project fingerprint: {str((baseline.get('project_fingerprint') or {}).get('digest', ''))[:16] or 'UNKNOWN'}",
             f"- Requirements hash: {baseline.get('requirements_hash') or manifest.get('recorded_requirements_hash', '')}",
             f"- Route coordinate: {index.get('route_coordinate') or 'NONE'}",
             f"- Confirmed decision refs: {json.dumps(index.get('confirmed_decision_refs', []), ensure_ascii=False)}",
             f"- Verified finding refs: {json.dumps(index.get('verified_finding_refs', []), ensure_ascii=False)}",
             f"- Open unknowns: {json.dumps(index.get('open_unknowns', []), ensure_ascii=False)}",
             f"- Research receipt refs: {json.dumps(index.get('research_receipt_refs', []), ensure_ascii=False)}",
+            f"- Reusable receipt refs: {json.dumps(index.get('reusable_research_receipt_refs', []), ensure_ascii=False)}",
             "",
             "## Last Verified Progress",
             summary,
@@ -1469,12 +1631,27 @@ def change(
                 impact.strip() or "Recheck acceptance, route, and implementation details before continuing.",
             ),
         )
+        # A recorded requirement change is an authorized ledger lifecycle event.
+        # Refresh its ledger hashes so the Hook does not mistake our own handoff
+        # rewrite for external tampering, while project drift remains gated.
+        root = expected_root.resolve() if expected_root else context_dir.parent.resolve()
+        manifest["continuity_baseline"] = continuity_baseline(root, context_dir, manifest)
+        manifest["continuity_status"] = "UNCHANGED"
+        manifest["continuity_index"] = continuity_index(
+            root,
+            context_dir,
+            manifest,
+            "Validate the revised requirements against current files before checkpointing.",
+        )
+        manifest["checkpoint_hashes"] = content_hashes(context_dir)
+        write_manifest(context_dir, manifest)
     return enriched
 
 
 def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str, Any]:
     errors = verify(context_dir, expected_root=expected_root)
     warnings: list[str] = []
+    blocking_warnings: list[str] = []
     manifest = read_json(context_dir / "manifest.json") if not errors else {}
     checkpoint_hashes = manifest.get("checkpoint_hashes", {})
     current_hashes = content_hashes(context_dir)
@@ -1482,9 +1659,17 @@ def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str,
         for name, digest in current_hashes.items():
             expected = checkpoint_hashes.get(name)
             if expected and expected != digest:
-                warnings.append(f"uncheckpointed content change: {name}")
+                message = f"uncheckpointed content change: {name}"
+                warnings.append(message)
+                blocking_warnings.append(message)
+            elif not expected:
+                message = f"uncheckpointed content added: {name}"
+                warnings.append(message)
+                blocking_warnings.append(message)
     if manifest and current_hashes.get("requirements.md") != manifest.get("recorded_requirements_hash"):
-        warnings.append("unrecorded requirements change")
+        message = "unrecorded requirements change"
+        warnings.append(message)
+        blocking_warnings.append(message)
 
     changes = read_changes(context_dir, maximum=100000)
     revision_entries = [
@@ -1502,14 +1687,29 @@ def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str,
         requirements_text = (context_dir / "requirements.md").read_text(encoding="utf-8")
         document_revision = requirements_document_revision(requirements_text)
         if document_revision != manifest_revision:
-            warnings.append(
-                f"requirements document revision mismatch: document={document_revision}, manifest={manifest_revision}"
-            )
+            message = f"requirements document revision mismatch: document={document_revision}, manifest={manifest_revision}"
+            warnings.append(message)
+            blocking_warnings.append(message)
+
+    baseline_status = "UNKNOWN"
+    baseline_changed: list[str] = []
+    if manifest and not errors:
+        snapshot = continuity_snapshot(context_dir.parent, context_dir, manifest)
+        baseline_status = str(snapshot.get("baseline_status", "UNKNOWN"))
+        baseline_changed = list(snapshot.get("changed_fields", []))
+        if baseline_changed:
+            message = "baseline drift: " + ", ".join(baseline_changed)
+            warnings.append(message)
+            blocking_warnings.append(message)
 
     return {
         "valid": not errors,
         "errors": errors,
-        "warnings": warnings,
+        "warnings": list(dict.fromkeys(warnings)),
+        "blocking_warnings": list(dict.fromkeys(blocking_warnings)),
+        "blocking": bool(errors or blocking_warnings),
+        "baseline_status": baseline_status,
+        "baseline_changed": baseline_changed,
         "requirements_revision": manifest_revision,
         "recent_changes": read_changes(context_dir, maximum=8),
     }
@@ -1573,7 +1773,14 @@ def automatic(
                 }
             errors = verify(context_dir, expected_root=root)
             if errors:
-                raise ValueError("ledger is invalid: " + "; ".join(errors))
+                consistency = reconcile(context_dir, root)
+                manifest = read_json(context_dir / "manifest.json")
+                return {
+                    "action": "blocked",
+                    "context_dir": str(context_dir),
+                    "resume": blocked_resume(manifest, consistency, maximum),
+                    "consistency": consistency,
+                }
             return {
                 "action": "resumed",
                 "context_dir": str(context_dir),
@@ -1677,11 +1884,48 @@ def read_excerpt(path: Path, maximum: int, from_end: bool = False) -> str:
     return text[:maximum] + "\n..."
 
 
+def blocked_resume(manifest: dict[str, Any], consistency: dict[str, Any], maximum: int) -> str:
+    """Render only trusted metadata while the recovery gate is closed."""
+    if maximum < 1200:
+        raise ValueError("--max-chars must be at least 1200")
+    reasons = list(dict.fromkeys(
+        [str(item) for item in consistency.get("errors", [])]
+        + [str(item) for item in consistency.get("blocking_warnings", [])]
+    ))
+    payload = {
+        "status": "BLOCKED_UNCERTAINTY",
+        "task_id": str(manifest.get("task_id", "unknown")),
+        "checkpoint": manifest.get("checkpoint", 0),
+        "requirements_revision": requirements_revision(manifest),
+        "requirements_hash": str(manifest.get("recorded_requirements_hash", "")),
+        "baseline_status": consistency.get("baseline_status", "UNKNOWN"),
+        "changed_fields": consistency.get("baseline_changed", []),
+        "blocking": True,
+        "reasons": reasons[:12],
+        "next_action": "Inspect the current files, then run the trusted lifecycle checkpoint/rebaseline before editing.",
+    }
+    rendered = (
+        "# Durable Context Resume\n\n"
+        f"Task ID: {payload['task_id']} | Status: BLOCKED | Requirements revision: {payload['requirements_revision']}"
+        "\n\n## CONTINUITY STATUS\n"
+        + json.dumps({
+            "baseline_status": payload["baseline_status"],
+            "changed_fields": payload["changed_fields"],
+            "blocking": True,
+        }, ensure_ascii=False, indent=2)
+        + "\n\n## RECOVERY GATE\n"
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+    return rendered[:maximum]
+
+
 def resume(context_dir: Path, maximum: int) -> str:
     manifest = read_json(context_dir / "manifest.json")
     if maximum < 1200:
         raise ValueError("--max-chars must be at least 1200")
     consistency = reconcile(context_dir)
+    if consistency.get("blocking"):
+        return blocked_resume(manifest, consistency, maximum)
     continuity = continuity_snapshot(context_dir.parent, context_dir, manifest)
     continuity["budget_used"]["max_chars"] = maximum
     consistency_summary = json.dumps(
@@ -2002,7 +2246,7 @@ def self_test() -> None:
             errors
             or not rejected_small_budget
             or not changed["change"].get("after_revision") == 1
-            or not pending["warnings"]
+            or pending["warnings"]
             or "Captured the revised standard." not in output
             or "CONTINUITY STATUS" not in output
             or not isinstance(read_json(context_dir / "manifest.json").get("continuity_baseline"), dict)
@@ -2037,10 +2281,21 @@ continuity_parent_task_id: none
             or navigation.get("current_route_coordinate") != "R7:A3/B2"
             or changed_baseline.get("baseline_status") != "CHANGED"
             or "plans_hash" not in changed_baseline.get("changed_fields", [])
-            or "Plan Navigation" not in navigation_resume
-            or "R7:A3/B2" not in navigation_resume
+            or "RECOVERY GATE" not in navigation_resume
         ):
-            raise RuntimeError("self-test failed: valid plan navigation was not restored")
+            raise RuntimeError("self-test failed: plan drift was not gated")
+        checkpoint(
+            context_dir,
+            "Rebaselined the verified navigation plan.",
+            "Continue navigation checks.",
+            "self-test",
+            "",
+            "active",
+            expected_root=root,
+        )
+        navigation_resume = resume(context_dir, 3000)
+        if "Plan Navigation" not in navigation_resume or "R7:A3/B2" not in navigation_resume:
+            raise RuntimeError("self-test failed: verified plan navigation was not restored")
 
         invalid_plan = valid_plan.replace("route_id: R7", "route_id: R8")
         (root / "PLANS.md").write_text(invalid_plan, encoding="utf-8")
@@ -2227,7 +2482,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_location_arguments(status_parser)
     resume_parser = subparsers.add_parser("resume", help="print a compact resume brief")
     add_location_arguments(resume_parser)
-    resume_parser.add_argument("--max-chars", type=int, default=6000, help="maximum resume output size")
+    resume_parser.add_argument("--max-chars", type=int, default=3600, help="maximum resume output size")
     verify_parser = subparsers.add_parser("verify", help="validate ledger structure")
     add_location_arguments(verify_parser)
     auto_parser = subparsers.add_parser("auto", help=argparse.SUPPRESS)
@@ -2239,7 +2494,7 @@ def build_parser() -> argparse.ArgumentParser:
     auto_parser.add_argument("--verified", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--risks", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--status", choices=("active", "blocked", "complete"), default="active", help=argparse.SUPPRESS)
-    auto_parser.add_argument("--max-chars", type=int, default=6000, help=argparse.SUPPRESS)
+    auto_parser.add_argument("--max-chars", type=int, default=3600, help=argparse.SUPPRESS)
     auto_parser.add_argument("--category", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--source", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--impact", default="", help=argparse.SUPPRESS)
@@ -2249,6 +2504,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="strict", newline="\n")
+        except (AttributeError, TypeError, ValueError):
+            continue
     parser = build_parser()
     args = parser.parse_args()
     try:
@@ -2259,7 +2519,7 @@ def main() -> int:
         root, context_dir = resolve_context_dir(args.root, args.dir)
         if args.command == "init":
             initialize(root, context_dir, require_task(args.task))
-            print(json.dumps({"context_dir": str(context_dir), "status": "initialized"}, ensure_ascii=True))
+            print(json.dumps({"context_dir": str(context_dir), "status": "initialized"}, ensure_ascii=False))
             return 0
 
         if args.command == "auto":
@@ -2279,7 +2539,7 @@ def main() -> int:
                 args.impact,
                 args.requirements,
             )
-            print(json.dumps(payload, ensure_ascii=True, indent=2))
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
             return 0
 
         if context_dir.is_dir():
@@ -2298,10 +2558,10 @@ def main() -> int:
                 args.status,
                 expected_root=root,
             )
-            print(json.dumps({"context_dir": str(context_dir), "status": "checkpointed"}, ensure_ascii=True))
+            print(json.dumps({"context_dir": str(context_dir), "status": "checkpointed"}, ensure_ascii=False))
             return 0
         if args.command == "status":
-            print(json.dumps(status(context_dir), ensure_ascii=True, indent=2))
+            print(json.dumps(status(context_dir), ensure_ascii=False, indent=2))
             return 0
         if args.command == "resume":
             print(resume(context_dir, args.max_chars))
