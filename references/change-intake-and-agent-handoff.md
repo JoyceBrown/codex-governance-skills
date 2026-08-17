@@ -14,6 +14,14 @@ Use exactly one canonical class for the latest material change:
 | `priority_branch` | Do something else first, then stop or return | Current work is paused or superseded temporarily, but the project destination remains unchanged | Update `PLANS.md`; record deferred work, reason, impact, resume condition, and exact `on_complete` behavior |
 | `roadmap_change` | Change what the project is becoming | Durable scope, non-goals, architecture, safety, data compatibility, supported platforms, or long-term destination changes | Update only the existing or justified durable owners actually affected; update a roadmap only when the project has one, then reconcile `PLANS.md` when planning authority is enabled |
 
+When the optional plan-navigation extension is enabled, map these classes without creating new authority semantics:
+
+- Keep the current route coordinate for a `task_adjustment` unless the accepted work actually changes persistent branch.
+- Represent a `priority_branch` as `C` only when it interrupts work beyond the current turn or requires an explicit return target. Keep the paused task as `continuity_parent_task_id`, and keep `on_complete` as `resume:<task-id>`.
+- Start a new route ID for a `roadmap_change` only when an approved long-horizon route is genuinely replaced. Preserve the old route ID as historical.
+
+Read `plan-navigation.md` before adding or changing these optional fields.
+
 Classify the real effect, not individual words. "Temporarily" does not make an incompatible database migration a harmless branch. "Small change" does not make a new data-sharing boundary a task adjustment.
 
 Never silently downgrade a `roadmap_change` to `task_adjustment`. A request can contain several edits; use the highest consequential class that applies, or split it into separately identified changes when their owners and timing differ.

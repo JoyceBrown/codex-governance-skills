@@ -109,6 +109,8 @@ Enable the planning-authority module only when at least one signal exists:
 
 When enabled, read `references/planning-authority.md` completely before proposing artifacts. Use its plain-language questions and migrate existing content conservatively. Do not make users design plan IDs, authority markers, or file routing themselves.
 
+Read `references/plan-navigation.md` only when an approved multi-stage route has demonstrated structural drift across context resets, or a temporary priority branch needs an explicit continuity parent and return target. Treat route coordinates as optional annotations of the active plan; never create another Skill, task list, current-task field, or completion mechanism for them.
+
 When the user adds or changes a requirement during ongoing work, or when work must continue in a new task, fork, or subagent, read `references/change-intake-and-agent-handoff.md` completely. Classify the change by its real effect, not by casual wording. Ask one plain-language question only when the answer changes durable project boundaries, what work should be restored later, or who has authority to alter the plan.
 
 When long-running software work shows bare continuation prompts, bundled
@@ -262,6 +264,7 @@ Do not claim the project is fully configured when commands, deployment, security
 
 - Read `references/interview-and-profiles.md` for discovery questions, profile selection, and artifact criteria.
 - Read `references/planning-authority.md` when long-running work, multiple plans, reprioritization, or plan confusion is present.
+- Read `references/plan-navigation.md` when a validated active plan needs stable long-horizon route coordinates or continuity-parent recovery.
 - Read `references/change-intake-and-agent-handoff.md` when requirements change during work or when a new task, fork, or subagent must continue the work.
 - Read `references/execution-discipline.md` for long-running continuation,
   atomic completion, priority, blocker, retry, delivery, terminology,

@@ -9,6 +9,7 @@ Use this module only when a project has long-running work, competing plans, cros
 - [Authority model](#authority-model)
 - [Artifact ownership](#artifact-ownership)
 - [Active plan contract](#active-plan-contract)
+- [Optional plan navigation](#optional-plan-navigation)
 - [Continuation, completion, and delivery](#continuation-completion-and-delivery)
 - [Reprioritization](#reprioritization)
 - [Mid-project requirement changes](#mid-project-requirement-changes)
@@ -129,6 +130,14 @@ activate:<plan-id>
 
 Avoid ambiguous values such as `continue`, `return to the plan`, or `do the next task`.
 
+## Optional plan navigation
+
+Use `references/plan-navigation.md` only when a multi-stage route has demonstrated navigation drift, temporary priority branches need an explicit continuity parent, or work must recover its structural position after context resets. Do not enable it merely because a plan is long.
+
+Plan navigation adds optional `route_id`, `current_route_coordinate`, and, for temporary continuity work, `continuity_parent_task_id`. These fields annotate the active plan and never replace `plan_id`, `current_task_id`, milestone status, `latest_change_class`, deferred work, or `on_complete`.
+
+Keep one `in_progress` milestone. A `C` coordinate is the navigation expression of an accepted `priority_branch`; its parent task remains paused and its `on_complete` value resumes that task ID. Do not put the route coordinate itself in `on_complete`.
+
 ## Continuation, completion, and delivery
 
 For an active long-running plan, use
@@ -240,6 +249,7 @@ Verify:
 - roadmap and checkpoint files explicitly have no execution authority
 - root `AGENTS.md` routes execution to the active plan
 - `on_complete` is explicit and machine-readable
+- optional plan-navigation fields are internally consistent and never create another current task
 - continuation and completion policies are explicit and use
   `validate_then_advance` and `all_required_items`
 - priority basis names the user outcome or demonstrated prerequisite

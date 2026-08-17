@@ -81,7 +81,7 @@ VAGUE_AGENT_PATTERNS = {
     "Chinese impossible perfection": re.compile(r"(?:不要|不能|永远不要)犯错"),
 }
 PLAN_FIELD_RE = re.compile(
-    r"^\s*(plan_id|status|authority|current_task_id|continuation_policy|completion_policy|priority_basis|delivery_contract|latest_change_id|latest_change_class|change_authority_reference|delegated_execution|on_complete|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
+    r"^\s*(plan_id|status|authority|current_task_id|continuation_policy|completion_policy|priority_basis|delivery_contract|latest_change_id|latest_change_class|change_authority_reference|delegated_execution|on_complete|route_id|current_route_coordinate|continuity_parent_task_id|execution_authority|record_kind|active_plan)\s*:\s*(.*?)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
 ROADMAP_CHECKBOX_RE = re.compile(r"^\s*[-*+]\s+\[\s*\]", re.MULTILINE)
@@ -96,6 +96,11 @@ ALLOWED_COMPLETION_POLICIES = {"all_required_items"}
 MILESTONE_ROW_RE = re.compile(
     r"^\|\s*([^|]+?)\s*\|\s*(pending|in_progress|completed|blocked|deferred)\s*\|",
     re.IGNORECASE | re.MULTILINE,
+)
+ROUTE_ID_RE = re.compile(r"^R[1-9][0-9]*$")
+ROUTE_COORDINATE_RE = re.compile(
+    r"^(?P<route>R[1-9][0-9]*):A(?P<a>[1-9][0-9]*)"
+    r"(?:/B(?P<b>[1-9][0-9]*))?(?:/C(?P<c>[1-9][0-9]*))?$"
 )
 MANUAL_COMMAND_PREFIXES = {
     "cargo", "dotnet", "go", "gradle", "gradlew", "make", "mvn", "mvnw",
@@ -298,6 +303,197 @@ def has_heading(text: str, heading: str) -> bool:
     )
 
 
+def markdown_section_body(text: str, heading: str) -> str:
+    match = re.search(
+        rf"^##\s+{re.escape(heading)}\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
+        text,
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    return match.group("body").strip() if match else ""
+
+
+def split_markdown_row(line: str) -> list[str]:
+    value = line.strip()
+    if not value.startswith("|") or not value.endswith("|"):
+        return []
+    return [cell.strip() for cell in value[1:-1].split("|")]
+
+
+def milestone_table(text: str) -> tuple[list[dict[str, str]], bool]:
+    body = markdown_section_body(text, "Milestones")
+    lines = [line for line in body.splitlines() if line.strip().startswith("|")]
+    if len(lines) < 2:
+        return [], False
+    headers = [re.sub(r"\s+", " ", item.strip().lower()) for item in split_markdown_row(lines[0])]
+    if "task id" not in headers or "status" not in headers:
+        return [], False
+    coordinate_header = next(
+        (name for name in ("route coordinate", "coordinate") if name in headers),
+        None,
+    )
+    rows: list[dict[str, str]] = []
+    for line in lines[2:]:
+        cells = split_markdown_row(line)
+        if len(cells) != len(headers):
+            continue
+        row = dict(zip(headers, cells))
+        task_id = row.get("task id", "").strip()
+        status = row.get("status", "").strip().lower()
+        if not task_id or status not in {"pending", "in_progress", "completed", "blocked", "deferred"}:
+            continue
+        rows.append(
+            {
+                "task_id": task_id,
+                "status": status,
+                "coordinate": row.get(coordinate_header, "").strip() if coordinate_header else "",
+            }
+        )
+    return rows, coordinate_header is not None
+
+
+def validate_plan_navigation(
+    rel: str,
+    text: str,
+    fields: dict[str, str],
+    errors: list[dict[str, str]],
+) -> dict[str, object] | None:
+    navigation_fields = (
+        "route_id",
+        "current_route_coordinate",
+        "continuity_parent_task_id",
+    )
+    enabled = any(fields.get(field, "").strip() for field in navigation_fields)
+    rows, has_coordinate_column = milestone_table(text)
+    if has_coordinate_column and any(
+        row["coordinate"].strip().lower() not in {"", "none", "-"}
+        for row in rows
+    ):
+        enabled = True
+    if not enabled:
+        return None
+
+    navigation_errors: list[tuple[str, str]] = []
+    route_id = fields.get("route_id", "").strip()
+    current_coordinate = fields.get("current_route_coordinate", "").strip()
+    continuity_parent = fields.get("continuity_parent_task_id", "").strip()
+    current_task = fields.get("current_task_id", "").strip()
+    on_complete = fields.get("on_complete", "").strip()
+    change_class = fields.get("latest_change_class", "").strip().lower()
+
+    if not route_id:
+        navigation_errors.append(("incomplete-plan-navigation", "route_id"))
+    elif not ROUTE_ID_RE.fullmatch(route_id):
+        navigation_errors.append(("invalid-route-id", route_id))
+
+    coordinate_match = ROUTE_COORDINATE_RE.fullmatch(current_coordinate)
+    if not current_coordinate:
+        navigation_errors.append(("incomplete-plan-navigation", "current_route_coordinate"))
+    elif not coordinate_match:
+        navigation_errors.append(("invalid-route-coordinate", current_coordinate))
+    elif route_id and coordinate_match.group("route") != route_id:
+        navigation_errors.append(
+            (
+                "route-coordinate-mismatch",
+                f"route_id={route_id}, coordinate={current_coordinate}",
+            )
+        )
+
+    row_by_task = {row["task_id"]: row for row in rows}
+    coordinate_by_task: dict[str, str] = {}
+    seen_coordinates: dict[str, str] = {}
+    if has_coordinate_column:
+        for row in rows:
+            coordinate = row["coordinate"].strip()
+            if coordinate.lower() in {"", "none", "-"}:
+                continue
+            match = ROUTE_COORDINATE_RE.fullmatch(coordinate)
+            if not match:
+                navigation_errors.append(
+                    ("invalid-milestone-route-coordinate", f"{row['task_id']}: {coordinate}")
+                )
+                continue
+            if route_id and match.group("route") != route_id:
+                navigation_errors.append(
+                    ("milestone-route-mismatch", f"{row['task_id']}: {coordinate}")
+                )
+            if coordinate in seen_coordinates:
+                navigation_errors.append(
+                    (
+                        "duplicate-route-coordinate",
+                        f"{coordinate}: {seen_coordinates[coordinate]}, {row['task_id']}",
+                    )
+                )
+            else:
+                seen_coordinates[coordinate] = row["task_id"]
+            coordinate_by_task[row["task_id"]] = coordinate
+        if current_task and current_task not in coordinate_by_task:
+            navigation_errors.append(
+                ("current-task-missing-route-coordinate", current_task)
+            )
+        elif current_task and current_coordinate and coordinate_by_task.get(current_task) != current_coordinate:
+            navigation_errors.append(
+                (
+                    "current-task-route-mismatch",
+                    f"{current_task}: {coordinate_by_task.get(current_task)} != {current_coordinate}",
+                )
+            )
+
+    is_continuity_work = bool(coordinate_match and coordinate_match.group("c"))
+    if is_continuity_work:
+        if not continuity_parent or continuity_parent.lower() in {"none", "-"}:
+            navigation_errors.append(
+                ("continuity-parent-required", current_coordinate)
+            )
+        else:
+            parent_row = row_by_task.get(continuity_parent)
+            if parent_row is None:
+                navigation_errors.append(
+                    ("continuity-parent-not-in-milestones", continuity_parent)
+                )
+            elif parent_row["status"] not in {"deferred", "blocked"}:
+                navigation_errors.append(
+                    (
+                        "continuity-parent-not-paused",
+                        f"{continuity_parent}: {parent_row['status']}",
+                    )
+                )
+            expected_resume = f"resume:{continuity_parent}"
+            if on_complete != expected_resume:
+                navigation_errors.append(
+                    (
+                        "continuity-return-mismatch",
+                        f"expected {expected_resume}, found {on_complete or 'missing'}",
+                    )
+                )
+        if change_class != "priority_branch":
+            navigation_errors.append(
+                ("continuity-work-not-priority-branch", change_class or "missing")
+            )
+    elif continuity_parent and continuity_parent.lower() not in {"none", "-"}:
+        navigation_errors.append(
+            ("unexpected-continuity-parent", continuity_parent)
+        )
+
+    for code, detail in navigation_errors:
+        errors.append({"code": code, "path": rel, "detail": detail})
+
+    if navigation_errors or coordinate_match is None:
+        return None
+    return {
+        "path": rel,
+        "plan_id": fields.get("plan_id", ""),
+        "route_id": route_id,
+        "current_task_id": current_task,
+        "current_route_coordinate": current_coordinate,
+        "continuity_parent_task_id": (
+            continuity_parent
+            if continuity_parent and continuity_parent.lower() not in {"none", "-"}
+            else None
+        ),
+        "source": "active exclusive PLANS.md",
+    }
+
+
 def validate_planning_authority(
     root: Path,
     files: list[Path],
@@ -312,6 +508,7 @@ def validate_planning_authority(
     noncanonical_planning_paths: list[str] = []
     undeclared_roadmap_authority: list[str] = []
     undeclared_checkpoint_authority: list[str] = []
+    plan_navigation: list[dict[str, object]] = []
 
     for path in files:
         rel = path.relative_to(root).as_posix()
@@ -609,6 +806,10 @@ def validate_planning_authority(
                 }
             )
 
+        navigation = validate_plan_navigation(rel, text, fields, errors)
+        if navigation is not None:
+            plan_navigation.append(navigation)
+
     for rel in undeclared_roadmap_authority:
         target = errors if active_plans else warnings
         target.append(
@@ -686,6 +887,7 @@ def validate_planning_authority(
             "roadmaps": roadmap_paths,
             "checkpoints": checkpoint_paths,
             "noncanonical_planning": noncanonical_planning_paths,
+            "plan_navigation": plan_navigation,
             "artifacts": [
                 path.relative_to(root).as_posix()
                 for path, _, _ in planning_records

@@ -228,6 +228,137 @@ class PlanningAuthorityValidationTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(set(), self.codes(result, "errors"))
 
+    def test_valid_plan_navigation_passes_without_changing_task_authority(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "on_complete: wait",
+            "on_complete: wait\n"
+            "route_id: R7\n"
+            "current_route_coordinate: R7:A3/B2\n"
+            "continuity_parent_task_id: none",
+        ).replace(
+            "| Task ID | Status | Outcome |\n"
+            "| --- | --- | --- |\n"
+            "| TASK-01 | in_progress | The feature works. |",
+            "| Task ID | Status | Route coordinate | Outcome |\n"
+            "| --- | --- | --- | --- |\n"
+            "| TASK-01 | in_progress | R7:A3/B2 | The feature works. |",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+        planning = next(
+            entry
+            for entry in result["info"]
+            if entry.get("code") == "planning-authority"
+        )
+        self.assertEqual(
+            "R7:A3/B2",
+            planning["plan_navigation"][0]["current_route_coordinate"],
+        )
+
+    def test_malformed_or_route_mismatched_navigation_fails(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "on_complete: wait",
+            "on_complete: wait\n"
+            "route_id: R7\n"
+            "current_route_coordinate: R8:A0\n"
+            "continuity_parent_task_id: none",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("invalid-route-coordinate", self.codes(result, "errors"))
+
+    def test_current_task_coordinate_must_match_milestone_annotation(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "on_complete: wait",
+            "on_complete: wait\n"
+            "route_id: R7\n"
+            "current_route_coordinate: R7:A3/B2\n"
+            "continuity_parent_task_id: none",
+        ).replace(
+            "| Task ID | Status | Outcome |\n"
+            "| --- | --- | --- |\n"
+            "| TASK-01 | in_progress | The feature works. |",
+            "| Task ID | Status | Route coordinate | Outcome |\n"
+            "| --- | --- | --- | --- |\n"
+            "| TASK-01 | in_progress | R7:A3/B3 | The feature works. |",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        self.assertIn("current-task-route-mismatch", self.codes(result, "errors"))
+
+    def test_valid_continuity_coordinate_resumes_the_paused_parent(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "latest_change_class: task_adjustment",
+            "latest_change_class: priority_branch",
+        ).replace(
+            "on_complete: wait",
+            "on_complete: resume:TASK-OLD\n"
+            "route_id: R7\n"
+            "current_route_coordinate: R7:A3/B2/C1\n"
+            "continuity_parent_task_id: TASK-OLD",
+        ).replace(
+            "## Milestones",
+            "## Deferred work\n\n"
+            "| Item | Reason deferred | Impact | Resume condition |\n"
+            "| --- | --- | --- | --- |\n"
+            "| TASK-OLD | User changed priority | Delays Android recovery | After TASK-01 |\n\n"
+            "## Milestones",
+        ).replace(
+            "| Task ID | Status | Outcome |\n"
+            "| --- | --- | --- |\n"
+            "| TASK-01 | in_progress | The feature works. |",
+            "| Task ID | Status | Route coordinate | Outcome |\n"
+            "| --- | --- | --- | --- |\n"
+            "| TASK-OLD | deferred | R7:A3/B2 | Android recovery resumes. |\n"
+            "| TASK-01 | in_progress | R7:A3/B2/C1 | The feature works. |",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(set(), self.codes(result, "errors"))
+
+    def test_continuity_coordinate_cannot_create_an_implicit_return(self) -> None:
+        temporary, root = self.make_project()
+        self.addCleanup(temporary.cleanup)
+        (root / "AGENTS.md").write_text(AGENT_ROUTING, encoding="utf-8")
+        plan = ACTIVE_PLAN.replace(
+            "on_complete: wait",
+            "on_complete: wait\n"
+            "route_id: R7\n"
+            "current_route_coordinate: R7:A3/B2/C1",
+        )
+        (root / "PLANS.md").write_text(plan, encoding="utf-8")
+
+        result = validate(root, "minimal")
+
+        self.assertFalse(result["ok"])
+        error_codes = self.codes(result, "errors")
+        self.assertIn("continuity-parent-required", error_codes)
+        self.assertIn("continuity-work-not-priority-branch", error_codes)
+
     def test_roadmap_change_requires_durable_authority_reference(self) -> None:
         temporary, root = self.make_project()
         self.addCleanup(temporary.cleanup)

@@ -15,6 +15,16 @@ change_authority_reference: {{DURABLE_DOCUMENT_DECISION_OR_NONE}}
 delegated_execution: {{NONE_OR_ACTIVE_DELEGATION_IDS}}
 on_complete: {{WAIT_OR_RESUME_TASK_OR_ACTIVATE_PLAN}}
 
+When plan navigation is justified, add these metadata fields above and remove this paragraph after adapting the template:
+
+```text
+route_id: {{ROUTE_ID}}
+current_route_coordinate: {{CURRENT_ROUTE_COORDINATE}}
+continuity_parent_task_id: {{PARENT_TASK_ID_OR_NONE}}
+```
+
+Keep task IDs and route coordinates separate. `on_complete` must continue to target a task or plan ID, never an `R#:A#/B#/C#` coordinate.
+
 Use this plan only for work that spans multiple modules, has meaningful risk, must survive a context reset, or needs explicit protection from competing plans. Remove this file when the project does not need a durable active plan.
 
 ## Objective
@@ -51,11 +61,11 @@ milestone. Partial completion of a required bundle is progress, not completion.
 
 ## Milestones
 
-| Task ID | Status | Verifiable outcome |
-| --- | --- | --- |
-| {{CURRENT_TASK_ID}} | in_progress | {{OUTCOME}} |
+| Task ID | Status | Route coordinate | Verifiable outcome |
+| --- | --- | --- | --- |
+| {{CURRENT_TASK_ID}} | in_progress | {{ROUTE_COORDINATE_OR_NONE}} | {{OUTCOME}} |
 
-Use only `pending`, `in_progress`, `blocked`, or `completed` for task status. Keep exactly one `in_progress` task and make it match `current_task_id`. Represent bounded parallel help in delegation packets, not as competing current plan authority.
+Use only `pending`, `in_progress`, `blocked`, `deferred`, or `completed` for task status. Keep exactly one `in_progress` task and make it match `current_task_id`. Represent bounded parallel help in delegation packets, not as competing current plan authority.
 
 ## Risks and recovery
 
