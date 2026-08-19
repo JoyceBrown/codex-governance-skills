@@ -19,7 +19,7 @@ The project-local ledger remains the authority. A compaction summary, old handof
 
 Interrupted ledger writes are recovered transactionally. For projection drift, use the internal automatic `repair` event only after the current project root and manifest are verified. The repair path validates the append-only `changes.jsonl` chain and repairs at most one trailing history checkpoint when the checkpoint number is uniquely proven. It may regenerate `handoff.md` only when its recorded hash has actually drifted or the missing history checkpoint was repaired.
 
-Repair fails closed with `RECOVERY_REQUIRED` when requirements, authoritative ledger files, project baseline, transaction state, or checkpoint history is ambiguous. It never rewrites project source or guesses missing historical detail.
+Repair fails closed with `RECOVERY_REQUIRED` when requirements, authoritative ledger files, transaction state, or checkpoint history is ambiguous. A uniquely proven generated projection may be repaired while the project baseline has changed, but the repair preserves that drift and returns `rebaseline_required`; only a later explicit checkpoint after current-file inspection may reopen the write gate. Repair never rewrites project source or guesses missing historical detail.
 
 The Stop Hook records a bounded, privacy-safe failure fingerprint. The same fingerprint is allowed one continuation attempt; repeated identical failures open a circuit and return a warning without a continuation decision. A successful verified recovery or clean checkpoint clears the failure state.
 

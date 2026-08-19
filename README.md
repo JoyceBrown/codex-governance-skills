@@ -92,7 +92,7 @@ $env:DURABLE_CONTEXT_VAULT = 'E:\path\to\上下文系统'
 
 同步前会拒绝不一致、基线漂移或未 checkpoint 的 ledger。检索只遍历当前项目投影目录，并默认排除历史、superseded、needs-review、observed 和校验失败的页面；单文件和总结果都有上限。
 
-Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周期白名单要求精确的受信 `context_state.py` 路径，并拒绝 Shell 复合语法。
+Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周期白名单同时支持旧 `Bash/command` 与当前 `exec_command/cmd` 宿主协议，要求精确的受信 `context_state.py` 路径，并拒绝 Shell 复合语法。显式 `workdir` 和文件写入目标用于选择项目根；跨父子账本的单次写入会失败关闭。
 
 如果项目启用了可选路线坐标，Obsidian 只投影校验通过的坐标和 `PLANS.md` 内容哈希。坐标无效时会拒绝投影导航字段，Vault 不会成为修复计划冲突的事实源。
 

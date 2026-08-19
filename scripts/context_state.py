@@ -1599,9 +1599,6 @@ def repair_ledger(root: Path, context_dir: Path) -> dict[str, Any]:
             raise ValueError(f"RECOVERY_REQUIRED: authoritative ledger file drifted: {name}")
 
     baseline = continuity_snapshot(root, context_dir, manifest)
-    if baseline.get("baseline_status") == "CHANGED":
-        changed = ", ".join(str(item) for item in baseline.get("changed_fields", []))
-        raise ValueError("RECOVERY_REQUIRED: project baseline drifted: " + changed)
 
     changes = trusted_change_projection(context_dir, manifest)
     history = strict_jsonl(context_dir / "history.jsonl", "history.jsonl")
@@ -1672,7 +1669,13 @@ def repair_ledger(root: Path, context_dir: Path) -> dict[str, Any]:
         errors = verify(context_dir, expected_root=root)
         if errors:
             raise ValueError("RECOVERY_REQUIRED: no safe projection repair applies: " + "; ".join(errors))
-        return {"action": "already_valid", "repaired": [], "verified": True}
+        return {
+            "action": "already_valid",
+            "repaired": [],
+            "verified": True,
+            "baseline_status": baseline.get("baseline_status", "UNKNOWN"),
+            "rebaseline_required": baseline.get("baseline_status") == "CHANGED",
+        }
 
     with ledger_transaction(context_dir, "repair"):
         if recovered_history_entry is not None:
@@ -1700,7 +1703,13 @@ def repair_ledger(root: Path, context_dir: Path) -> dict[str, Any]:
         errors = verify(context_dir, ignore_transaction=True, expected_root=root)
         if errors:
             raise ValueError("RECOVERY_REQUIRED: repair verification failed: " + "; ".join(errors))
-    return {"action": "repaired", "repaired": repaired, "verified": True}
+    return {
+        "action": "repaired",
+        "repaired": repaired,
+        "verified": True,
+        "baseline_status": baseline.get("baseline_status", "UNKNOWN"),
+        "rebaseline_required": baseline.get("baseline_status") == "CHANGED",
+    }
 
 
 def compact_change_entries(entries: list[dict[str, Any]]) -> str:

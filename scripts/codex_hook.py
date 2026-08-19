@@ -39,6 +39,8 @@ READ_ONLY_COMMANDS = {
     "measure-object", "rg",
 }
 LIFECYCLE_EVENTS = {"recover", "change", "repair", "reconcile", "verify", "checkpoint"}
+SHELL_TOOL_NAMES = {"bash", "exec_command"}
+PATCH_TARGET = re.compile(r"(?m)^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$")
 WRITE_TOOL_NAME = re.compile(
     r"(?:^|__|_)(?:write|edit|apply_patch|click|type|input|upload|navigate|new_tab|close|cookies_set|"
     r"evaluate|exec|mouse|mouse_drag|window_activate|window_move|window_resize|clipboard_write|"
@@ -104,14 +106,80 @@ def is_read_only_shell(command: str) -> bool:
     return False
 
 
+def resolved_path(value: str, base: Path | None = None) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute() and base is not None:
+        candidate = base / candidate
+    return candidate.resolve()
+
+
 def find_project(start: str | None) -> tuple[Path, Path] | None:
-    candidate = Path(start or os.getcwd()).expanduser().resolve()
+    candidate = resolved_path(start or os.getcwd())
     if candidate.is_file():
         candidate = candidate.parent
     for root in (candidate, *candidate.parents):
         ledger = root / context_state.DEFAULT_DIR
         if (ledger / "manifest.json").is_file():
+            manifest = context_state.read_json(ledger / "manifest.json")
+            recorded_root = str(manifest.get("root") or "").strip()
+            if not recorded_root:
+                raise ValueError(f"ledger manifest is missing its project root: {ledger}")
+            if resolved_path(recorded_root) != root.resolve():
+                raise ValueError(f"ledger manifest root does not match its directory: {ledger}")
             return root, ledger
+    return None
+
+
+def tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    value = payload.get("tool_input")
+    return value if isinstance(value, dict) else {}
+
+
+def shell_command(payload: dict[str, Any]) -> str:
+    values = tool_input(payload)
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    key = "cmd" if tool_name == "exec_command" else "command"
+    return str(values.get(key) or "")
+
+
+def explicit_file_targets(payload: dict[str, Any]) -> list[str]:
+    values = tool_input(payload)
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    if tool_name == "apply_patch":
+        patch = str(values.get("patch") or values.get("input") or "")
+        return [match.strip().strip('"') for match in PATCH_TARGET.findall(patch) if match.strip()]
+    if tool_name in {"edit", "write"}:
+        for key in ("file_path", "path", "filename"):
+            value = str(values.get(key) or "").strip()
+            if value:
+                return [value]
+    return []
+
+
+def resolve_project(payload: dict[str, Any]) -> tuple[Path, Path] | None:
+    cwd = resolved_path(str(payload.get("cwd") or os.getcwd()))
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    values = tool_input(payload)
+    if str(payload.get("hook_event_name") or "") == "PreToolUse" and tool_name in SHELL_TOOL_NAMES:
+        workdir = str(values.get("workdir") or "").strip()
+        return find_project(str(resolved_path(workdir, cwd))) if workdir else find_project(str(cwd))
+
+    targets = explicit_file_targets(payload)
+    if not targets:
+        return find_project(str(cwd))
+    projects: dict[str, tuple[Path, Path]] = {}
+    unowned = False
+    for target in targets:
+        target_parent = resolved_path(target, cwd).parent
+        project = find_project(str(target_parent))
+        if project is None:
+            unowned = True
+            continue
+        projects[str(project[0]).casefold()] = project
+    if len(projects) > 1 or (projects and unowned):
+        raise ValueError("write targets cross durable-context project roots")
+    if projects:
+        return next(iter(projects.values()))
     return None
 
 
@@ -371,19 +439,15 @@ def tool_is_write_capable(payload: dict[str, Any]) -> bool:
     tool_name = str(payload.get("tool_name") or "")
     if tool_name in {"apply_patch", "Edit", "Write"}:
         return True
-    if tool_name != "Bash":
+    if tool_name.casefold() not in SHELL_TOOL_NAMES:
         return bool(WRITE_TOOL_NAME.search(tool_name))
-    tool_input = payload.get("tool_input")
-    command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    return not is_read_only_shell(command)
+    return not is_read_only_shell(shell_command(payload))
 
 
 def is_lifecycle_repair(payload: dict[str, Any], root: Path, ledger: Path) -> bool:
-    if str(payload.get("tool_name") or "") != "Bash":
+    if str(payload.get("tool_name") or "").casefold() not in SHELL_TOOL_NAMES:
         return False
-    tool_input = payload.get("tool_input")
-    command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    tokens = shell_tokens(command)
+    tokens = shell_tokens(shell_command(payload))
     if not tokens:
         return False
     index = 0
@@ -659,7 +723,7 @@ def handle_stop(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult
 
 def dispatch(payload: dict[str, Any]) -> HookResult:
     event = str(payload.get("hook_event_name") or "").strip()
-    project = find_project(str(payload.get("cwd") or ""))
+    project = resolve_project(payload)
     if not project:
         return HookResult({}, "allow", "no_ledger", None)
     root, ledger = project
@@ -730,13 +794,20 @@ def process(payload: dict[str, Any], log_maximum: int = MAX_LOG_BYTES) -> HookRe
     try:
         result = dispatch(payload)
     except Exception as exc:
-        project = find_project(str(payload.get("cwd") or ""))
-        result = HookResult(
-            {"systemMessage": f"Durable-context hook warning: {exc}"},
-            "warning",
-            "unhandled_hook_error",
-            project,
-        )
+        if str(payload.get("hook_event_name") or "") == "PreToolUse":
+            result = HookResult(
+                deny_tool(f"Durable-context could not resolve one trusted project root: {exc}"),
+                "deny",
+                "project_resolution_failed",
+                None,
+            )
+        else:
+            result = HookResult(
+                {"systemMessage": f"Durable-context hook warning: {exc}"},
+                "warning",
+                "unhandled_hook_error",
+                None,
+            )
     duration_ms = (time.perf_counter() - started) * 1000
     if result.project:
         record_event(result.project[1], payload, result, duration_ms, maximum=log_maximum)
