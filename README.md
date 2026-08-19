@@ -43,7 +43,8 @@ examples/                脱敏后的 Hook 和 MCP 配置模板
 把仓库目录复制到 Codex 技能目录：
 
 ```powershell
-$skillRoot = Join-Path $env:USERPROFILE '.codex\skills\durable-context'
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$skillRoot = Join-Path $codexHome 'skills\durable-context'
 New-Item -ItemType Directory -Force -Path $skillRoot | Out-Null
 Copy-Item -Recurse -Force .\* $skillRoot
 ```
@@ -57,15 +58,14 @@ Copy-Item -Recurse -Force .\* $skillRoot
 建议启用的事件：
 
 - `SessionStart`
-- `UserPromptSubmit`
 - `PreToolUse`
 - `PreCompact`
 - `PostCompact`
 - `Stop`
 
-Hook 是机械守卫，不负责猜测语义需求。`UserPromptSubmit` 的词法命中只写入脱敏 telemetry，不阻断项目写入或普通问答；确认后的需求变化仍由技能生命周期记录到当前 ledger。
+默认模板不注册 `UserPromptSubmit`，因此普通提问不会运行需求猜测 Hook；确认后的需求变化仍由技能生命周期记录到当前 ledger。诊断安装可选地启用该事件，但词法命中只能写入脱敏 telemetry。`PreToolUse` 对普通源码编辑、诊断命令、shell 和 UI 操作全部放行，只拒绝直接写入 `.agent-context` 的文件工具调用。
 
-账本 checkpoint、revision 或生成投影不一致时，`Stop` 只记录脱敏 advisory telemetry，不产生可见 Hook 输出，也不请求 continuation，因此普通问答可以正常结束。未完成事务等主动恢复条件仍只允许进入一次受信任的 `repair` 生命周期；相同恢复失败达到上限后打开熔断并安全结束当前回合。项目文件漂移和账本损坏继续由写入型 `PreToolUse` 门禁保护，不会猜测覆盖。
+账本 checkpoint、revision、生成投影、项目文件、Git 或计划基线发生变化时，Hook 只记录脱敏 advisory telemetry，不阻断普通工作、压缩或停止。只有未完成的账本事务允许在 `Stop` 请求一次受信任恢复；相同恢复失败达到上限后打开熔断并安全结束当前回合。项目变化由 Codex 根据当前证据判断，Hook 不再把正常开发误判成危险写入。
 
 ## Context MCP
 

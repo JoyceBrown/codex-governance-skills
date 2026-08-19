@@ -73,4 +73,4 @@ Automatic reuse requires `status: VALID`, matching question/scope/source fingerp
 
 ## Baseline Drift
 
-At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, project_fingerprint, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` closes the write/retrieval gate until the current files are inspected and a trusted checkpoint rebaselines the project; it does not mean the implementation is wrong. Do not proceed with a stale or unrecorded requirements hash.
+At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, project_fingerprint, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` is an observer signal that identifies which current evidence should be rechecked; it never closes ordinary project writes or read-only retrieval by itself. Verified ledger corruption and unrecorded requirements state remain explicit uncertainty, while normal source, Git, and plan changes may continue and be rebaselined at the next trusted checkpoint.

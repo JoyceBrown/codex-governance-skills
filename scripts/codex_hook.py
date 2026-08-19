@@ -85,7 +85,7 @@ def shell_tokens(command: str) -> list[str] | None:
     if not command.strip() or SHELL_CONTROL.search(command):
         return None
     try:
-        return [token.strip('"') for token in shlex.split(command, posix=False)]
+        return [token.strip("\"'") for token in shlex.split(command, posix=False)]
     except ValueError:
         return None
 
@@ -154,6 +154,28 @@ def explicit_file_targets(payload: dict[str, Any]) -> list[str]:
             if value:
                 return [value]
     return []
+
+
+def targets_ledger_state(payload: dict[str, Any], root: Path, ledger: Path) -> bool:
+    """Return true only for explicit file writes inside the authoritative ledger."""
+    ledger = ledger.resolve()
+    for value in explicit_file_targets(payload):
+        try:
+            resolved_path(value, root).relative_to(ledger)
+            return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def names_ledger_state(payload: dict[str, Any]) -> bool:
+    """Recognize an explicit ledger path even when project routing is ambiguous."""
+    expected = context_state.DEFAULT_DIR.casefold()
+    for value in explicit_file_targets(payload):
+        parts = [part.casefold() for part in Path(value).parts]
+        if expected in parts:
+            return True
+    return False
 
 
 def resolve_project(payload: dict[str, Any]) -> tuple[Path, Path] | None:
@@ -584,40 +606,19 @@ def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookRe
         return HookResult({}, "allow", "read_only_tool", (root, ledger))
     if is_lifecycle_repair(payload, root, ledger):
         return HookResult({}, "allow", "lifecycle_repair", (root, ledger))
-    errors = context_state.verify(ledger, expected_root=root)
-    if errors:
-        reason = "Durable-context rejected this write because the project ledger is invalid: " + "; ".join(errors)
-        return HookResult(deny_tool(reason), "deny", "invalid_ledger", (root, ledger))
-    consistency = context_state.reconcile(ledger, expected_root=root)
-    if consistency.get("blocking"):
-        reasons = list(dict.fromkeys(
-            [str(item) for item in consistency.get("errors", [])]
-            + [str(item) for item in consistency.get("blocking_warnings", [])]
-        ))
-        reason = (
-            "Durable-context rejected this write because recovery is blocked by current-state drift. "
-            "Inspect the files and record a trusted checkpoint/rebaseline first: "
-            + "; ".join(reasons)
-        )
-        return HookResult(deny_tool(reason), "deny", "recovery_gate", (root, ledger))
-    snapshot = ledger_snapshot(root, ledger)
-    guard = pending_turn_guard(ledger, payload, snapshot)
-    if guard is not None:
-        clear_turn_guard(ledger, payload)
-        return HookResult({}, "allow", "requirement_advisory", (root, ledger))
-    return HookResult({}, "allow", "ledger_valid", (root, ledger))
+    if not targets_ledger_state(payload, root, ledger):
+        return HookResult({}, "allow", "non_ledger_write", (root, ledger))
+    reason = (
+        "Durable-context rejected a direct write to the authoritative .agent-context ledger. "
+        "Use the trusted lifecycle helper so the revision, hash chain, transaction, and checkpoint stay consistent."
+    )
+    return HookResult(deny_tool(reason), "deny", "direct_ledger_write", (root, ledger))
 
 
 def handle_pre_compact(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        reason = "Durable-context stopped compaction because the ledger is invalid: " + "; ".join(errors)
-        return HookResult(
-            {"continue": False, "stopReason": reason[:1800], "systemMessage": "Compaction needs ledger repair"},
-            "deny",
-            "invalid_ledger",
-            (root, ledger),
-        )
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
     snapshot = ledger_snapshot(root, ledger)
     guard = pending_turn_guard(ledger, payload, snapshot)
     if guard is not None:
@@ -631,12 +632,7 @@ def handle_pre_compact(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
 def handle_post_compact(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        return HookResult(
-            {"systemMessage": "Durable-context detected an invalid ledger after compaction; repair it before editing."},
-            "warning",
-            "invalid_ledger",
-            (root, ledger),
-        )
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
     before = compaction_snapshot(ledger, payload)
     after = ledger_snapshot(root, ledger)
     if before is None:
@@ -778,13 +774,15 @@ def process(payload: dict[str, Any], log_maximum: int = MAX_LOG_BYTES) -> HookRe
     try:
         result = dispatch(payload)
     except Exception as exc:
-        if str(payload.get("hook_event_name") or "") == "PreToolUse":
+        if str(payload.get("hook_event_name") or "") == "PreToolUse" and names_ledger_state(payload):
             result = HookResult(
                 deny_tool(f"Durable-context could not resolve one trusted project root: {exc}"),
                 "deny",
                 "project_resolution_failed",
                 None,
             )
+        elif str(payload.get("hook_event_name") or "") == "PreToolUse":
+            result = HookResult({}, "warning", "project_resolution_warning", None)
         else:
             result = HookResult(
                 {"systemMessage": f"Durable-context hook warning: {exc}"},
@@ -901,11 +899,13 @@ def self_test() -> None:
                 "session_id": session,
                 "turn_id": "turn-corrupt",
                 "tool_name": "apply_patch",
-                "tool_input": {"command": "private-corrupt-input"},
+                "tool_input": {
+                    "patch": f"*** Begin Patch\n*** Update File: {requirements_path}\nprivate-corrupt-input\n*** End Patch"
+                },
             }
         )
-        if corrupt.outcome != "deny" or corrupt.reason != "invalid_ledger":
-            raise RuntimeError("self-test failed: invalid ledger did not block a write")
+        if corrupt.outcome != "deny" or corrupt.reason != "direct_ledger_write":
+            raise RuntimeError("self-test failed: direct ledger write was not blocked")
         no_ledger = process({"hook_event_name": "PreToolUse", "cwd": str(root.parent)})
         if no_ledger.payload:
             raise RuntimeError("self-test failed: no-ledger project was not ignored")

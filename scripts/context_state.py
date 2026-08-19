@@ -682,9 +682,9 @@ def continuity_snapshot(root: Path, context_dir: Path, manifest: dict[str, Any])
         "recovery_tier": 0,
         "searched_scope": ["current-ledger", "verified-project"],
         "budget_used": {"max_chars": 0, "history_included": False},
-        "blocking": bool(changed_fields),
+        "blocking": False,
         "next_action": (
-            "Reconcile changed baseline fields before editing."
+            "Review changed baseline fields before relying on the old checkpoint; normal work may continue."
             if changed_fields
             else "Continue from the current checkpoint; retrieve history only for a specific unresolved question."
         ),
@@ -1910,7 +1910,6 @@ def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str,
         if baseline_changed:
             message = "baseline drift: " + ", ".join(baseline_changed)
             warnings.append(message)
-            blocking_warnings.append(message)
 
     return {
         "valid": not errors,
@@ -2494,9 +2493,9 @@ continuity_parent_task_id: none
             or navigation.get("current_route_coordinate") != "R7:A3/B2"
             or changed_baseline.get("baseline_status") != "CHANGED"
             or "plans_hash" not in changed_baseline.get("changed_fields", [])
-            or "RECOVERY GATE" not in navigation_resume
+            or "RECOVERY GATE" in navigation_resume
         ):
-            raise RuntimeError("self-test failed: plan drift was not gated")
+            raise RuntimeError("self-test failed: plan drift was not reported as a non-blocking observation")
         checkpoint(
             context_dir,
             "Rebaselined the verified navigation plan.",

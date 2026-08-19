@@ -7,8 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "command": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "commandWindows": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
             "timeout": 3,
             "statusMessage": "Restoring durable task context",
             "additionalContextLimit": 5000
@@ -22,8 +22,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "command": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "commandWindows": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
             "timeout": 3,
             "statusMessage": "Validating durable context before compaction"
           }
@@ -36,38 +36,23 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "command": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "commandWindows": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
             "timeout": 3,
             "statusMessage": "Checking durable context after compaction"
           }
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "timeout": 3,
-            "statusMessage": "Routing durable task changes",
-            "additionalContextLimit": 1200
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
-        "matcher": "^(?:Bash|apply_patch|Edit|Write|.*(?:click|type|input|upload|navigate|new_tab|close|cookies_set|evaluate|exec|mouse|mouse_drag|window_activate|window_move|window_resize|clipboard_write|clipboard_clean|send|create|update|delete|remove|rename|install|add|computer_use))$",
+        "matcher": "^(?:apply_patch|Edit|Write)$",
         "hooks": [
           {
             "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "timeout": 3,
-            "statusMessage": "Checking durable context before writing"
+            "command": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "commandWindows": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "timeout": 3
           }
         ]
       }
@@ -77,10 +62,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "commandWindows": "py -3 \"%USERPROFILE%\\.codex\\skills\\durable-context\\scripts\\codex_hook.py\"",
-            "timeout": 3,
-            "statusMessage": "Checking durable task state"
+            "command": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "commandWindows": "py -3 \"%CODEX_HOME%\\skills\\durable-context\\scripts\\codex_hook.py\"",
+            "timeout": 3
           }
         ]
       }

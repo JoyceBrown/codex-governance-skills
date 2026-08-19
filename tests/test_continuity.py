@@ -101,7 +101,7 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
         self.assertEqual([], context_state.reconcile(self.ledger, expected_root=self.root)["warnings"])
 
-    def test_project_drift_and_tampered_handoff_close_the_recovery_gate(self) -> None:
+    def test_project_drift_is_advisory_but_tampered_handoff_closes_the_recovery_gate(self) -> None:
         source = self.root / "src.py"
         source.write_text("print('baseline')\n", encoding="utf-8")
         context_state.checkpoint(
@@ -115,11 +115,11 @@ class ContinuityContractTests(unittest.TestCase):
         )
         source.write_text("print('changed')\n", encoding="utf-8")
         drift = context_state.reconcile(self.ledger, expected_root=self.root)
-        self.assertTrue(drift["blocking"])
+        self.assertFalse(drift["blocking"])
         self.assertIn("project_fingerprint", drift["baseline_changed"])
-        blocked = context_state.resume(self.ledger, 3000)
-        self.assertIn("RECOVERY GATE", blocked)
-        self.assertNotIn("baseline recorded", blocked)
+        resumed = context_state.resume(self.ledger, 3000)
+        self.assertNotIn("RECOVERY GATE", resumed)
+        self.assertIn("baseline recorded", resumed)
 
         context_state.checkpoint(
             self.ledger,
@@ -191,6 +191,12 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
         payload["tool_input"]["command"] = command.replace("--event verify", "--event repair")
         self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+        payload["tool_input"]["command"] = (
+            f"'{sys.executable}' '{Path(context_state.__file__).resolve()}' "
+            f"--root '{self.root}' auto --event repair"
+        )
+        self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+        payload["tool_input"]["command"] = command
         payload["tool_input"]["command"] = command + " && whoami"
         self.assertFalse(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
         payload["tool_input"]["command"] = command.replace("context_state.py", "attacker_context_state.py")
@@ -219,7 +225,7 @@ class ContinuityContractTests(unittest.TestCase):
         payload["tool_input"]["cmd"] = command + " && whoami"
         self.assertFalse(codex_hook.is_lifecycle_repair(payload, child, child_ledger))
 
-    def test_nested_ledger_target_routing_fails_closed_on_cross_root_patch(self) -> None:
+    def test_nested_ledger_target_routing_degrades_open_on_cross_root_project_patch(self) -> None:
         child = self.root / "product"
         child.mkdir()
         child_ledger = child / context_state.DEFAULT_DIR
@@ -249,8 +255,57 @@ class ContinuityContractTests(unittest.TestCase):
             },
         }
         result = codex_hook.process(mixed_payload)
-        self.assertEqual("deny", result.outcome)
-        self.assertEqual("project_resolution_failed", result.reason)
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("project_resolution_warning", result.reason)
+        self.assertEqual({}, result.payload)
+
+    def test_invalid_ledger_blocks_only_explicit_ledger_writes(self) -> None:
+        requirements = self.ledger / "requirements.md"
+        requirements.write_text(requirements.read_text(encoding="utf-8") + "\ninvalid change\n", encoding="utf-8")
+        source = self.root / "source.py"
+        source.write_text("print('ok')\n", encoding="utf-8")
+
+        source_write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": f"*** Begin Patch\n*** Update File: {source}\n*** End Patch"},
+            }
+        )
+        self.assertEqual("allow", source_write.outcome)
+        self.assertEqual("non_ledger_write", source_write.reason)
+
+        for tool_name, tool_input in (
+            ("exec_command", {"cmd": "Get-Process", "workdir": str(self.root)}),
+            ("mcp__nuphus__browser_click", {"selector": "button"}),
+        ):
+            result = codex_hook.process(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "cwd": str(self.root),
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                }
+            )
+            self.assertEqual("allow", result.outcome)
+            self.assertEqual("non_ledger_write", result.reason)
+
+        ledger_write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": f"*** Begin Patch\n*** Update File: {requirements}\n*** End Patch"},
+            }
+        )
+        self.assertEqual("deny", ledger_write.outcome)
+        self.assertEqual("direct_ledger_write", ledger_write.reason)
+
+        precompact = codex_hook.process({"hook_event_name": "PreCompact", "cwd": str(self.root)})
+        self.assertEqual("warning", precompact.outcome)
+        self.assertEqual("invalid_ledger_observed", precompact.reason)
+        self.assertEqual({}, precompact.payload)
 
     def test_find_project_rejects_a_manifest_owned_by_another_root(self) -> None:
         rogue = self.root / "rogue"
@@ -317,7 +372,9 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertEqual("repaired", result["action"])
         self.assertTrue(result["rebaseline_required"])
         self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
-        self.assertTrue(context_state.reconcile(self.ledger, expected_root=self.root)["blocking"])
+        consistency = context_state.reconcile(self.ledger, expected_root=self.root)
+        self.assertFalse(consistency["blocking"])
+        self.assertIn("project_fingerprint", consistency["baseline_changed"])
 
     def test_repair_refuses_ambiguous_history_and_preserves_the_projection(self) -> None:
         context_state.checkpoint(
@@ -429,7 +486,7 @@ class ContinuityContractTests(unittest.TestCase):
             }
         )
         self.assertEqual("allow", write.outcome)
-        self.assertEqual("ledger_valid", write.reason)
+        self.assertEqual("non_ledger_write", write.reason)
 
         stop = codex_hook.process(
             {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": session, "turn_id": turn}
