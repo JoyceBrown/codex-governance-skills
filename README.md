@@ -25,15 +25,20 @@
 正常入口仍然是自然语言。Codex 根据任务选择需要的 Skill，不要求用户记住内部协议。
 
 ```text
-用户目标
-  -> intent-alignment（目标/范围/未知）
-  -> bootstrap-codex-project（项目权责/计划）
-  -> durable-context（连续性/基线）
-  -> diagnose 或 architecture-health（证据/边界）
-  -> tdd-loop（实现/回归）
-  -> human-centered-reasoning-guard（写入与完成门禁）
-  -> deliberate-project（三堂会审，只有用户显式要求时）
+按任务信号选择能力，不是固定流水线：
+
+新建或治理项目       -> bootstrap-codex-project
+长任务或跨会话       -> durable-context
+目标模糊             -> intent-alignment
+根因不清或结果未变   -> diagnose
+代码/测试变更         -> tdd-loop
+结构、依赖或容量疑问 -> architecture-health
+写入、外部副作用或完成声明 -> human-centered-reasoning-guard
+能力明显错配         -> capability-director（只读候选诊断）
+用户明确“三堂会审”   -> deliberate-project（显式、只读）
 ```
+
+`human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context` 和 `deliberate-project` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
 
 `capability-director` 只在当前能力明显不匹配时建议“使用、借鉴、Fork、安装或拒绝”。它先检查项目已有能力和 Codex 原生能力，最多给出 3 个候选，并记录问题、范围、来源和结论；它不会自动下载、修改配置、授予权限或启动插件运行时。
 
