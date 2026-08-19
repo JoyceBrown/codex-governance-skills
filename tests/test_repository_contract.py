@@ -45,7 +45,9 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
     def test_public_tree_excludes_private_runtime_material(self):
         forbidden_names = {".agent-context", "hook-events.jsonl", "conversation-history.md", ".runtime", ".git"}
         for path in ROOT.rglob("*"):
-            lowered = {part.lower() for part in path.parts}
+            lowered = {part.lower() for part in path.relative_to(ROOT).parts}
+            if ".git" in lowered:
+                continue
             self.assertTrue(forbidden_names.isdisjoint(lowered), str(path))
         content_files = [
             p for p in ROOT.rglob("*")

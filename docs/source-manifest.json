@@ -5,25 +5,25 @@
     {
       "skill": "bootstrap-codex-project",
       "repository": "https://github.com/JoyceBrown/bootstrap-codex-project",
-      "commit": "3ebae7c512de846435fc0632d84e898638e6fd2c",
+      "commit": "17a7d09bbef60c27461923916d709fc3175308a0",
       "changes": ["added bounded composition contract"]
     },
     {
       "skill": "durable-context",
       "repository": "https://github.com/JoyceBrown/durable-context",
-      "commit": "87ac40f29bfc29676aac667e163521226afec37a",
+      "commit": "ae3ae6d1e1d9e884a2d73ff33cf9b17d8573d3c9",
       "changes": ["added bounded composition contract"]
     },
     {
       "skill": "human-centered-reasoning-guard",
       "repository": "https://github.com/JoyceBrown/human-centered-reasoning-guard",
-      "commit": "4cc16ba8eeedd4cf8583344b63108354d81d7877",
+      "commit": "ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e",
       "changes": ["added bounded composition contract"]
     },
     {
       "skill": "deliberate-project",
       "repository": "https://github.com/JoyceBrown/deliberate-project",
-      "commit": "a49e65cf3544cd9fefb4370959394f3f905ba621",
+      "commit": "b167dce30a46ff50bd321b69df52d9b37cf041c6",
       "source_subdirectory": "deliberate-project",
       "changes": ["added minimal read-only composition contract"]
     }

@@ -118,9 +118,9 @@ python -X utf8 "$env:CODEX_HOME\skills\.system\skill-creator\scripts\quick_valid
 
 本次整合基线：
 
-- `bootstrap-codex-project`: `3ebae7c512de846435fc0632d84e898638e6fd2c`
-- `durable-context`: `87ac40f29bfc29676aac667e163521226afec37a`
-- `human-centered-reasoning-guard`: `4cc16ba8eeedd4cf8583344b63108354d81d7877`
-- `deliberate-project`: `a49e65cf3544cd9fefb4370959394f3f905ba621`
+- `bootstrap-codex-project`: `17a7d09bbef60c27461923916d709fc3175308a0`
+- `durable-context`: `ae3ae6d1e1d9e884a2d73ff33cf9b17d8573d3c9`
+- `human-centered-reasoning-guard`: `ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e`
+- `deliberate-project`: `b167dce30a46ff50bd321b69df52d9b37cf041c6`
 
 四个入口在上述基线上增加了最小组合合同；其余核心实现和测试保持来源版本结构。
