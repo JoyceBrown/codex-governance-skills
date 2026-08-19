@@ -244,6 +244,18 @@ When experience learning was loaded, run its `finalize` command before this repo
 
 Do not claim the project is fully configured when commands, deployment, security, or external integrations remain unverified.
 
+## Composition Contract
+
+This Skill remains complete when used alone. When the optional governance set is present, it accepts a compact envelope with `request_id`, `intent_status`, `evidence_refs`, `scope`, `next_action`, and `budget`; it does not accept raw transcripts as authority.
+
+- `intent-alignment` may supply a clarified goal and explicit non-goals. Treat it as **Decided** only when the user or a canonical project file supports it; otherwise keep it **Assumed** or **Open**.
+- `durable-context` may supply a verified resume package. Use its requirements and ledger hashes as continuity evidence, but keep this Skill's project-file ownership rules authoritative for generated artifacts.
+- `diagnose`, `architecture-health`, and `tdd-loop` may supply findings or checks. Store durable conclusions in the canonical project owner; do not copy their working notes into `AGENTS.md`.
+- `human-centered-reasoning-guard` may deny a write or external action. A denial is a boundary signal, not a request to weaken this Skill's project structure.
+- `deliberate-project` is read-only and explicit-only. Its findings can inform an audit or decision record, but never authorize implementation.
+
+When an optional Skill is absent, continue with the standalone workflow and record the missing capability as an explicit **Open** item only if it changes the result. Never create a second plan, ledger, or project authority to emulate a missing integration.
+
 ## Guardrails
 
 - Do not generate every possible file.
