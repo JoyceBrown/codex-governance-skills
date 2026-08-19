@@ -1,4 +1,0 @@
-interface:
-  display_name: "Bootstrap Codex Project"
-  short_description: "Build evidence-based project context and delivery gates"
-  default_prompt: "Use $bootstrap-codex-project to turn this idea or repository into the smallest trustworthy project context, adding MVP and delivery gates only when the evidence warrants them."
