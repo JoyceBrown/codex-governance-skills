@@ -12,7 +12,7 @@
 - 通过 requirements revision、内容哈希和 checkpoint 防止旧需求覆盖新需求。
 - 对受限源码/配置集合保存聚合项目指纹；源码、PLANS 或账本投影漂移会关闭写入和跨工作台读取门，直到检查并重新 checkpoint。
 - 在压缩前后校验 task ID、checkpoint、revision 和 requirements hash。
-- 对项目写入执行一致性守卫；账本无效或需求版本未推进时拒绝写入。
+- 对项目写入执行一致性守卫；仅在账本无效或当前项目基线漂移时拒绝写入，词法上的潜在需求变化只观察、不设门禁。
 - 通过 Obsidian 做可验证的只读投影，通过 Context MCP 提供跨工作台只读读取。
 - Hook 日志只记录脱敏的事件、结果、延迟和状态元数据，不记录原始 prompt、工具参数、转录或凭据。
 
@@ -43,7 +43,8 @@ examples/                脱敏后的 Hook 和 MCP 配置模板
 把仓库目录复制到 Codex 技能目录：
 
 ```powershell
-$skillRoot = Join-Path $env:USERPROFILE '.codex\skills\durable-context'
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
+$skillRoot = Join-Path $codexHome 'skills\durable-context'
 New-Item -ItemType Directory -Force -Path $skillRoot | Out-Null
 Copy-Item -Recurse -Force .\* $skillRoot
 ```
@@ -57,13 +58,14 @@ Copy-Item -Recurse -Force .\* $skillRoot
 建议启用的事件：
 
 - `SessionStart`
-- `UserPromptSubmit`
 - `PreToolUse`
 - `PreCompact`
 - `PostCompact`
 - `Stop`
 
-Hook 是机械守卫，不负责猜测语义需求。需求变化仍由技能生命周期记录到当前 ledger。
+默认模板不注册 `UserPromptSubmit`，因此普通提问不会运行需求猜测 Hook；确认后的需求变化仍由技能生命周期记录到当前 ledger。诊断安装可选地启用该事件，但词法命中只能写入脱敏 telemetry。`PreToolUse` 对普通源码编辑、诊断命令、shell 和 UI 操作全部放行，只拒绝直接写入 `.agent-context` 的文件工具调用。
+
+账本 checkpoint、revision、生成投影、项目文件、Git 或计划基线发生变化时，Hook 只记录脱敏 advisory telemetry，不阻断普通工作、压缩或停止。只有未完成的账本事务允许在 `Stop` 请求一次受信任恢复；相同恢复失败达到上限后打开熔断并安全结束当前回合。项目变化由 Codex 根据当前证据判断，Hook 不再把正常开发误判成危险写入。
 
 ## Context MCP
 
@@ -90,7 +92,7 @@ $env:DURABLE_CONTEXT_VAULT = 'E:\path\to\上下文系统'
 
 同步前会拒绝不一致、基线漂移或未 checkpoint 的 ledger。检索只遍历当前项目投影目录，并默认排除历史、superseded、needs-review、observed 和校验失败的页面；单文件和总结果都有上限。
 
-Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周期白名单要求精确的受信 `context_state.py` 路径，并拒绝 Shell 复合语法。
+Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周期白名单同时支持旧 `Bash/command` 与当前 `exec_command/cmd` 宿主协议，要求精确的受信 `context_state.py` 路径，并拒绝 Shell 复合语法。显式 `workdir` 和文件写入目标用于选择项目根；跨父子账本的单次写入会失败关闭。
 
 如果项目启用了可选路线坐标，Obsidian 只投影校验通过的坐标和 `PLANS.md` 内容哈希。坐标无效时会拒绝投影导航字段，Vault 不会成为修复计划冲突的事实源。
 
@@ -111,6 +113,17 @@ py -3 -m unittest discover -s .\tests -v
 ```powershell
 py -3 .\scripts\context_state.py --root 'C:\path\to\project' verify
 ```
+
+只读审计技能源树和生效安装树（默认输出 JSON）：
+
+```powershell
+py -3 .\scripts\audit_skill_collection.py `
+  --source-root 'C:\path\to\skill-sources' `
+  --install-root "$env:CODEX_HOME\skills" `
+  --hooks "$env:CODEX_HOME\hooks.json"
+```
+
+审计会校验 `SKILL.md` frontmatter、重复名称、`runtime.conf` 脚本目标、当前 Hook 路径、嵌套 Git 状态，以及按 LF 归一化后的源/安装清单哈希。它只读，不会修复、提交或推送；历史文档中的旧路径会作为警告保留，生效 Hook 或运行时中的失效旧路径才会使状态变为 `fail`。
 
 ## 已知边界
 

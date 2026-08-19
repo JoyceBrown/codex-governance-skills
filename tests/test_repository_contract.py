@@ -1,4 +1,6 @@
+import json
 import re
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,14 @@ EXPECTED = {
     "architecture-health",
     "capability-director",
 }
+COLLECTION_REPOSITORY = "https://github.com/JoyceBrown/codex-governance-skills"
+MATURE = {
+    "bootstrap-codex-project",
+    "durable-context",
+    "human-centered-reasoning-guard",
+    "deliberate-project",
+}
+TEXT_SUFFIXES = {".json", ".md", ".ps1", ".py", ".yaml", ".yml"}
 
 
 class IntegratedRepositoryContractTests(unittest.TestCase):
@@ -29,7 +39,7 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             self.assertRegex(skill, r"(?m)^description:\s*.+$")
 
     def test_composition_contracts_are_present(self):
-        for name in EXPECTED - {"intent-alignment", "diagnose", "tdd-loop", "architecture-health", "capability-director"}:
+        for name in MATURE:
             skill = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("Composition Contract", skill)
         composition = (ROOT / "docs" / "composition.md").read_text(encoding="utf-8")
@@ -41,6 +51,67 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             metadata = (SKILLS / name / "agents" / "openai.yaml").read_text(encoding="utf-8")
             self.assertIn("display_name:", metadata)
             self.assertIn("short_description:", metadata)
+
+    def test_collection_is_the_only_maintenance_authority(self):
+        manifest = json.loads(
+            (ROOT / "docs" / "source-manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            manifest["schema"], "codex-governance-skills-source-manifest-v2"
+        )
+        self.assertEqual(manifest["authority"]["repository"], COLLECTION_REPOSITORY)
+        records = {record["skill"]: record for record in manifest["skills"]}
+        self.assertEqual(set(records), MATURE)
+        for name, record in records.items():
+            self.assertEqual(record["authority_repository"], COLLECTION_REPOSITORY)
+            self.assertEqual(record["source_path"], f"skills/{name}")
+            self.assertRegex(record["legacy_import"]["commit"], r"^[0-9a-f]{40}$")
+            self.assertNotEqual(
+                record["legacy_import"]["repository"], COLLECTION_REPOSITORY
+            )
+
+    def test_mature_skill_regressions_are_embedded(self):
+        for name in ("bootstrap-codex-project", "durable-context", "deliberate-project"):
+            tests = list((SKILLS / name / "tests").glob("test_*.py"))
+            self.assertTrue(tests, name)
+        self.assertTrue(
+            (SKILLS / "durable-context" / "scripts" / "audit_skill_collection.py").is_file()
+        )
+        self.assertTrue(
+            (
+                SKILLS
+                / "human-centered-reasoning-guard"
+                / "scripts"
+                / "run-regression-tests.ps1"
+            ).is_file()
+        )
+
+    def test_git_paths_and_published_text_blobs_are_portable(self):
+        paths = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+        ).stdout.split(b"\0")
+        tracked = [path.decode("utf-8") for path in paths if path]
+        self.assertTrue(tracked)
+        for path in tracked:
+            self.assertNotIn("\\", path)
+            self.assertFalse(path.startswith("/"))
+            if Path(path).suffix.lower() not in TEXT_SUFFIXES and Path(path).name not in {
+                ".gitattributes",
+                ".gitignore",
+            }:
+                continue
+            blob = subprocess.run(
+                ["git", "show", f":{path}"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+            self.assertFalse(blob.startswith(b"\xef\xbb\xbf"), path)
+            self.assertNotIn(b"\r\n", blob, path)
+            blob.decode("utf-8", errors="strict")
 
     def test_public_tree_excludes_private_runtime_material(self):
         forbidden_names = {".agent-context", "hook-events.jsonl", "conversation-history.md", ".runtime", ".git"}

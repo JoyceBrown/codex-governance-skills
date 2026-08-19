@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -100,7 +101,7 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
         self.assertEqual([], context_state.reconcile(self.ledger, expected_root=self.root)["warnings"])
 
-    def test_project_drift_and_tampered_handoff_close_the_recovery_gate(self) -> None:
+    def test_project_drift_is_advisory_but_tampered_handoff_closes_the_recovery_gate(self) -> None:
         source = self.root / "src.py"
         source.write_text("print('baseline')\n", encoding="utf-8")
         context_state.checkpoint(
@@ -114,11 +115,11 @@ class ContinuityContractTests(unittest.TestCase):
         )
         source.write_text("print('changed')\n", encoding="utf-8")
         drift = context_state.reconcile(self.ledger, expected_root=self.root)
-        self.assertTrue(drift["blocking"])
+        self.assertFalse(drift["blocking"])
         self.assertIn("project_fingerprint", drift["baseline_changed"])
-        blocked = context_state.resume(self.ledger, 3000)
-        self.assertIn("RECOVERY GATE", blocked)
-        self.assertNotIn("baseline recorded", blocked)
+        resumed = context_state.resume(self.ledger, 3000)
+        self.assertNotIn("RECOVERY GATE", resumed)
+        self.assertIn("baseline recorded", resumed)
 
         context_state.checkpoint(
             self.ledger,
@@ -188,10 +189,339 @@ class ContinuityContractTests(unittest.TestCase):
         command = f'{sys.executable} "{Path(context_state.__file__).resolve()}" --root "{self.root}" auto --event verify'
         payload = {"tool_name": "Bash", "tool_input": {"command": command}}
         self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+        payload["tool_input"]["command"] = command.replace("--event verify", "--event repair")
+        self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+        payload["tool_input"]["command"] = (
+            f"'{sys.executable}' '{Path(context_state.__file__).resolve()}' "
+            f"--root '{self.root}' auto --event repair"
+        )
+        self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+        payload["tool_input"]["command"] = command
         payload["tool_input"]["command"] = command + " && whoami"
         self.assertFalse(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
         payload["tool_input"]["command"] = command.replace("context_state.py", "attacker_context_state.py")
         self.assertFalse(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
+
+    def test_exec_command_uses_cmd_and_explicit_workdir_for_nested_ledgers(self) -> None:
+        child = self.root / "product"
+        child.mkdir()
+        child_ledger = child / context_state.DEFAULT_DIR
+        context_state.automatic(child, child_ledger, "start", "Child task", "", "", "", "", "active", 3000)
+        command = f'{sys.executable} "{Path(context_state.__file__).resolve()}" --root "{child}" auto --event verify'
+        payload = {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(self.root),
+            "tool_name": "exec_command",
+            "tool_input": {"cmd": command, "workdir": str(child)},
+        }
+        resolved = codex_hook.resolve_project(payload)
+        self.assertIsNotNone(resolved)
+        self.assertEqual(child.resolve(), resolved[0])
+        self.assertTrue(codex_hook.is_lifecycle_repair(payload, child, child_ledger))
+        result = codex_hook.process(payload)
+        self.assertEqual("allow", result.outcome)
+        self.assertEqual("lifecycle_repair", result.reason)
+
+        payload["tool_input"]["cmd"] = command + " && whoami"
+        self.assertFalse(codex_hook.is_lifecycle_repair(payload, child, child_ledger))
+
+    def test_nested_ledger_target_routing_degrades_open_on_cross_root_project_patch(self) -> None:
+        child = self.root / "product"
+        child.mkdir()
+        child_ledger = child / context_state.DEFAULT_DIR
+        context_state.automatic(child, child_ledger, "start", "Child task", "", "", "", "", "active", 3000)
+        parent_file = self.root / "parent.txt"
+        child_file = child / "child.txt"
+        parent_file.write_text("parent\n", encoding="utf-8")
+        child_file.write_text("child\n", encoding="utf-8")
+
+        child_payload = {
+            "hook_event_name": "PreToolUse",
+            "cwd": str(self.root),
+            "tool_name": "apply_patch",
+            "tool_input": {"patch": f"*** Begin Patch\n*** Update File: {child_file}\n*** End Patch"},
+        }
+        resolved = codex_hook.resolve_project(child_payload)
+        self.assertIsNotNone(resolved)
+        self.assertEqual(child.resolve(), resolved[0])
+
+        mixed_payload = {
+            **child_payload,
+            "tool_input": {
+                "patch": (
+                    f"*** Begin Patch\n*** Update File: {parent_file}\n"
+                    f"*** Update File: {child_file}\n*** End Patch"
+                )
+            },
+        }
+        result = codex_hook.process(mixed_payload)
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("project_resolution_warning", result.reason)
+        self.assertEqual({}, result.payload)
+
+    def test_invalid_ledger_blocks_only_explicit_ledger_writes(self) -> None:
+        requirements = self.ledger / "requirements.md"
+        requirements.write_text(requirements.read_text(encoding="utf-8") + "\ninvalid change\n", encoding="utf-8")
+        source = self.root / "source.py"
+        source.write_text("print('ok')\n", encoding="utf-8")
+
+        source_write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": f"*** Begin Patch\n*** Update File: {source}\n*** End Patch"},
+            }
+        )
+        self.assertEqual("allow", source_write.outcome)
+        self.assertEqual("non_ledger_write", source_write.reason)
+
+        for tool_name, tool_input in (
+            ("exec_command", {"cmd": "Get-Process", "workdir": str(self.root)}),
+            ("mcp__nuphus__browser_click", {"selector": "button"}),
+        ):
+            result = codex_hook.process(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "cwd": str(self.root),
+                    "tool_name": tool_name,
+                    "tool_input": tool_input,
+                }
+            )
+            self.assertEqual("allow", result.outcome)
+            self.assertEqual("non_ledger_write", result.reason)
+
+        ledger_write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": f"*** Begin Patch\n*** Update File: {requirements}\n*** End Patch"},
+            }
+        )
+        self.assertEqual("deny", ledger_write.outcome)
+        self.assertEqual("direct_ledger_write", ledger_write.reason)
+
+        precompact = codex_hook.process({"hook_event_name": "PreCompact", "cwd": str(self.root)})
+        self.assertEqual("warning", precompact.outcome)
+        self.assertEqual("invalid_ledger_observed", precompact.reason)
+        self.assertEqual({}, precompact.payload)
+
+    def test_find_project_rejects_a_manifest_owned_by_another_root(self) -> None:
+        rogue = self.root / "rogue"
+        rogue_ledger = rogue / context_state.DEFAULT_DIR
+        rogue_ledger.mkdir(parents=True)
+        manifest = context_state.read_json(self.ledger / "manifest.json")
+        context_state.atomic_write(rogue_ledger / "manifest.json", json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "root does not match"):
+            codex_hook.find_project(str(rogue))
+
+    def test_repair_rebuilds_only_a_provable_trailing_history_projection(self) -> None:
+        context_state.checkpoint(
+            self.ledger,
+            "recorded checkpoint",
+            "continue after verification",
+            "test evidence",
+            "",
+            "active",
+            expected_root=self.root,
+        )
+        history = self.ledger / "history.jsonl"
+        lines = history.read_text(encoding="utf-8").splitlines()
+        history.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+        handoff = self.ledger / "handoff.md"
+        handoff.write_text(handoff.read_text(encoding="utf-8") + "\ninterrupted projection\n", encoding="utf-8")
+
+        result = context_state.automatic(
+            self.root,
+            self.ledger,
+            "repair",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "active",
+            3000,
+        )
+        self.assertEqual("repaired", result["action"])
+        self.assertIn("history.jsonl checkpoint 2", result["repaired"])
+        self.assertIn("handoff.md", result["repaired"])
+        self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
+        self.assertTrue(any(entry.get("kind") == "repair" for entry in context_state.read_changes(self.ledger, 100)))
+
+    def test_projection_repair_preserves_project_drift_for_explicit_rebaseline(self) -> None:
+        source = self.root / "source.py"
+        source.write_text("baseline\n", encoding="utf-8")
+        context_state.checkpoint(
+            self.ledger,
+            "recorded checkpoint",
+            "continue after verification",
+            "test evidence",
+            "",
+            "active",
+            expected_root=self.root,
+        )
+        history = self.ledger / "history.jsonl"
+        lines = history.read_text(encoding="utf-8").splitlines()
+        history.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+        source.write_text("drifted\n", encoding="utf-8")
+
+        result = context_state.repair_ledger(self.root, self.ledger)
+
+        self.assertEqual("repaired", result["action"])
+        self.assertTrue(result["rebaseline_required"])
+        self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
+        consistency = context_state.reconcile(self.ledger, expected_root=self.root)
+        self.assertFalse(consistency["blocking"])
+        self.assertIn("project_fingerprint", consistency["baseline_changed"])
+
+    def test_repair_refuses_ambiguous_history_and_preserves_the_projection(self) -> None:
+        context_state.checkpoint(
+            self.ledger,
+            "recorded checkpoint",
+            "continue after verification",
+            "test evidence",
+            "",
+            "active",
+            expected_root=self.root,
+        )
+        history = self.ledger / "history.jsonl"
+        lines = history.read_text(encoding="utf-8").splitlines()
+        history.write_text("\n".join(lines + [lines[-1]]) + "\n", encoding="utf-8")
+        before = history.read_text(encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "RECOVERY_REQUIRED"):
+            context_state.repair_ledger(self.root, self.ledger)
+        self.assertEqual(before, history.read_text(encoding="utf-8"))
+
+    def test_repair_does_not_replace_a_current_handoff_after_requirement_change(self) -> None:
+        current_requirements = (self.ledger / "requirements.md").read_text(encoding="utf-8")
+        revised = current_requirements.replace(
+            "## Current Revision\n0",
+            "## Current Revision\n1",
+        )
+        context_state.change(
+            self.ledger,
+            "Updated current requirement detail",
+            "clarification",
+            "test",
+            "The current handoff is authoritative until a later checkpoint.",
+            revised,
+            expected_root=self.root,
+        )
+        handoff = self.ledger / "handoff.md"
+        before = handoff.read_text(encoding="utf-8")
+        result = context_state.repair_ledger(self.root, self.ledger)
+        self.assertEqual("already_valid", result["action"])
+        self.assertEqual(before, handoff.read_text(encoding="utf-8"))
+
+    def test_session_start_attempts_one_trusted_repair_before_blocking(self) -> None:
+        context_state.checkpoint(
+            self.ledger,
+            "recorded checkpoint",
+            "continue after verification",
+            "test evidence",
+            "",
+            "active",
+            expected_root=self.root,
+        )
+        history = self.ledger / "history.jsonl"
+        lines = history.read_text(encoding="utf-8").splitlines()
+        history.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+        result = codex_hook.process({"hook_event_name": "SessionStart", "cwd": str(self.root)})
+        self.assertEqual("allow", result.outcome)
+        self.assertEqual("resume_verified", result.reason)
+        self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
+
+    def test_stop_opens_a_circuit_after_repeated_identical_recovery_failure(self) -> None:
+        (self.ledger / ".transaction.json").write_text("{}\n", encoding="utf-8")
+        payload = {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": "same-session"}
+        first = codex_hook.process(payload)
+        second = codex_hook.process(payload)
+        third = codex_hook.process(payload)
+        self.assertEqual("continue", first.outcome)
+        self.assertEqual("dirty_ledger", first.reason)
+        self.assertEqual("warning", second.outcome)
+        self.assertEqual("recovery_circuit_open", second.reason)
+        self.assertNotIn("decision", second.payload)
+        self.assertEqual("recovery_circuit_open", third.reason)
+
+        (self.ledger / ".transaction.json").unlink()
+        context_state.checkpoint(
+            self.ledger,
+            "transaction recovery verified",
+            "continue",
+            "test evidence",
+            "",
+            "active",
+            expected_root=self.root,
+        )
+        clean = codex_hook.process(payload)
+        self.assertEqual("active_clean", clean.reason)
+
+    def test_requirement_hint_is_observed_without_a_write_gate(self) -> None:
+        session = "hint-session"
+        turn = "hint-turn"
+        prompt = codex_hook.process(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": str(self.root),
+                "session_id": session,
+                "turn_id": turn,
+                "prompt": "Change the acceptance standard after reviewing the current evidence.",
+            }
+        )
+        self.assertEqual("allow", prompt.outcome)
+        self.assertEqual("requirement_observed", prompt.reason)
+        self.assertEqual({}, prompt.payload)
+
+        write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "session_id": session,
+                "turn_id": turn,
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": "*** Begin Patch\n*** End Patch"},
+            }
+        )
+        self.assertEqual("allow", write.outcome)
+        self.assertEqual("non_ledger_write", write.reason)
+
+        stop = codex_hook.process(
+            {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": session, "turn_id": turn}
+        )
+        self.assertEqual("active_clean", stop.reason)
+        self.assertNotIn("decision", stop.payload)
+
+    def test_stop_downgrades_ledger_bookkeeping_to_one_advisory(self) -> None:
+        consistency = {
+            "errors": ["complete ledger has unfinished Acceptance Standard items"],
+            "warnings": ["requirements revision mismatch: change log=2, manifest=0"],
+            "blocking_warnings": [],
+        }
+        payload = {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": "advisory-session"}
+        with mock.patch.object(codex_hook.context_state, "reconcile", return_value=consistency):
+            result = codex_hook.process(payload)
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("ledger_advisory", result.reason)
+        self.assertEqual({}, result.payload)
+
+    def test_invalid_ledger_prompt_hint_is_telemetry_only(self) -> None:
+        requirements = self.ledger / "requirements.md"
+        requirements.write_text(requirements.read_text(encoding="utf-8") + "\ninvalid change\n", encoding="utf-8")
+        result = codex_hook.process(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": str(self.root),
+                "session_id": "invalid-prompt-session",
+                "turn_id": "invalid-prompt-turn",
+                "prompt": "继续",
+            }
+        )
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("invalid_ledger_observed", result.reason)
+        self.assertEqual({}, result.payload)
 
 
 if __name__ == "__main__":

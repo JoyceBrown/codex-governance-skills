@@ -44,11 +44,16 @@ foreach ($line in $nonEmptyLines) {
     if ([Text.Encoding]::UTF8.GetByteCount($line) -gt $maxLineBytes) { throw "Record exceeds $maxLineBytes bytes." }
 }
 try {
-    Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop
-    $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
-    $serializer.MaxJsonLength = 104857600
-    # Parse the JSONL as one JSON array with the platform serializer to avoid a parser process per record.
-    $records = @($serializer.DeserializeObject(('[{0}]' -f ($nonEmptyLines -join ','))))
+    $jsonArray = '[{0}]' -f ($nonEmptyLines -join ',')
+    $convertCommand = Get-Command ConvertFrom-Json -ErrorAction Stop
+    if ($convertCommand.Parameters.ContainsKey('AsHashtable')) {
+        $records = @($jsonArray | ConvertFrom-Json -AsHashtable)
+    } else {
+        Add-Type -AssemblyName System.Web.Extensions -ErrorAction Stop
+        $serializer = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+        $serializer.MaxJsonLength = 104857600
+        $records = @($serializer.DeserializeObject($jsonArray))
+    }
 } catch {
     throw 'Memory store contains invalid JSON.'
 }

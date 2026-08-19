@@ -23,6 +23,7 @@ MAX_RESUME_CHARS = 3600
 MAX_LOG_BYTES = 1024 * 1024
 MAX_STATE_ENTRIES = 128
 STATE_TTL_SECONDS = 24 * 60 * 60
+RECOVERY_FAILURE_LIMIT = 2
 LOCK_WAIT_SECONDS = 0.5
 LOCK_STALE_SECONDS = 10.0
 
@@ -37,7 +38,9 @@ READ_ONLY_COMMANDS = {
     "get-content", "get-childitem", "select-string", "resolve-path", "test-path",
     "measure-object", "rg",
 }
-LIFECYCLE_EVENTS = {"recover", "change", "reconcile", "verify", "checkpoint"}
+LIFECYCLE_EVENTS = {"recover", "change", "repair", "reconcile", "verify", "checkpoint"}
+SHELL_TOOL_NAMES = {"bash", "exec_command"}
+PATCH_TARGET = re.compile(r"(?m)^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$")
 WRITE_TOOL_NAME = re.compile(
     r"(?:^|__|_)(?:write|edit|apply_patch|click|type|input|upload|navigate|new_tab|close|cookies_set|"
     r"evaluate|exec|mouse|mouse_drag|window_activate|window_move|window_resize|clipboard_write|"
@@ -82,7 +85,7 @@ def shell_tokens(command: str) -> list[str] | None:
     if not command.strip() or SHELL_CONTROL.search(command):
         return None
     try:
-        return [token.strip('"') for token in shlex.split(command, posix=False)]
+        return [token.strip("\"'") for token in shlex.split(command, posix=False)]
     except ValueError:
         return None
 
@@ -103,14 +106,102 @@ def is_read_only_shell(command: str) -> bool:
     return False
 
 
+def resolved_path(value: str, base: Path | None = None) -> Path:
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute() and base is not None:
+        candidate = base / candidate
+    return candidate.resolve()
+
+
 def find_project(start: str | None) -> tuple[Path, Path] | None:
-    candidate = Path(start or os.getcwd()).expanduser().resolve()
+    candidate = resolved_path(start or os.getcwd())
     if candidate.is_file():
         candidate = candidate.parent
     for root in (candidate, *candidate.parents):
         ledger = root / context_state.DEFAULT_DIR
         if (ledger / "manifest.json").is_file():
+            manifest = context_state.read_json(ledger / "manifest.json")
+            recorded_root = str(manifest.get("root") or "").strip()
+            if not recorded_root:
+                raise ValueError(f"ledger manifest is missing its project root: {ledger}")
+            if resolved_path(recorded_root) != root.resolve():
+                raise ValueError(f"ledger manifest root does not match its directory: {ledger}")
             return root, ledger
+    return None
+
+
+def tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    value = payload.get("tool_input")
+    return value if isinstance(value, dict) else {}
+
+
+def shell_command(payload: dict[str, Any]) -> str:
+    values = tool_input(payload)
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    key = "cmd" if tool_name == "exec_command" else "command"
+    return str(values.get(key) or "")
+
+
+def explicit_file_targets(payload: dict[str, Any]) -> list[str]:
+    values = tool_input(payload)
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    if tool_name == "apply_patch":
+        patch = str(values.get("patch") or values.get("input") or "")
+        return [match.strip().strip('"') for match in PATCH_TARGET.findall(patch) if match.strip()]
+    if tool_name in {"edit", "write"}:
+        for key in ("file_path", "path", "filename"):
+            value = str(values.get(key) or "").strip()
+            if value:
+                return [value]
+    return []
+
+
+def targets_ledger_state(payload: dict[str, Any], root: Path, ledger: Path) -> bool:
+    """Return true only for explicit file writes inside the authoritative ledger."""
+    ledger = ledger.resolve()
+    for value in explicit_file_targets(payload):
+        try:
+            resolved_path(value, root).relative_to(ledger)
+            return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def names_ledger_state(payload: dict[str, Any]) -> bool:
+    """Recognize an explicit ledger path even when project routing is ambiguous."""
+    expected = context_state.DEFAULT_DIR.casefold()
+    for value in explicit_file_targets(payload):
+        parts = [part.casefold() for part in Path(value).parts]
+        if expected in parts:
+            return True
+    return False
+
+
+def resolve_project(payload: dict[str, Any]) -> tuple[Path, Path] | None:
+    cwd = resolved_path(str(payload.get("cwd") or os.getcwd()))
+    tool_name = str(payload.get("tool_name") or "").casefold()
+    values = tool_input(payload)
+    if str(payload.get("hook_event_name") or "") == "PreToolUse" and tool_name in SHELL_TOOL_NAMES:
+        workdir = str(values.get("workdir") or "").strip()
+        return find_project(str(resolved_path(workdir, cwd))) if workdir else find_project(str(cwd))
+
+    targets = explicit_file_targets(payload)
+    if not targets:
+        return find_project(str(cwd))
+    projects: dict[str, tuple[Path, Path]] = {}
+    unowned = False
+    for target in targets:
+        target_parent = resolved_path(target, cwd).parent
+        project = find_project(str(target_parent))
+        if project is None:
+            unowned = True
+            continue
+        projects[str(project[0]).casefold()] = project
+    if len(projects) > 1 or (projects and unowned):
+        raise ValueError("write targets cross durable-context project roots")
+    if projects:
+        return next(iter(projects.values()))
     return None
 
 
@@ -182,22 +273,23 @@ def auxiliary_lock(ledger: Path) -> Iterator[None]:
 def load_state_unlocked(ledger: Path) -> dict[str, Any]:
     path = ledger / "hook-state.json"
     if not path.is_file():
-        return {"version": 1, "turn_guards": {}, "compactions": {}}
+        return {"version": 1, "turn_guards": {}, "compactions": {}, "recovery_failures": {}}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"version": 1, "turn_guards": {}, "compactions": {}}
+        return {"version": 1, "turn_guards": {}, "compactions": {}, "recovery_failures": {}}
     if not isinstance(value, dict):
-        return {"version": 1, "turn_guards": {}, "compactions": {}}
+        return {"version": 1, "turn_guards": {}, "compactions": {}, "recovery_failures": {}}
     value.setdefault("version", 1)
     value.setdefault("turn_guards", {})
     value.setdefault("compactions", {})
+    value.setdefault("recovery_failures", {})
     return value
 
 
 def prune_state(state: dict[str, Any]) -> None:
     cutoff = time.time() - STATE_TTL_SECONDS
-    for key in ("turn_guards", "compactions"):
+    for key in ("turn_guards", "compactions", "recovery_failures"):
         values = state.get(key)
         if not isinstance(values, dict):
             state[key] = {}
@@ -231,7 +323,55 @@ def read_state(ledger: Path) -> dict[str, Any]:
             prune_state(state)
             return state
     except (OSError, TimeoutError, ValueError):
-        return {"version": 1, "turn_guards": {}, "compactions": {}}
+        return {"version": 1, "turn_guards": {}, "compactions": {}, "recovery_failures": {}}
+
+
+def recovery_fingerprint(manifest: dict[str, Any], reasons: list[str]) -> str:
+    """Hash only bounded recovery metadata; never persist raw prompts or tool input."""
+    payload = {
+        "task_id": stable_id(manifest.get("task_id")),
+        "checkpoint": int(manifest.get("checkpoint", 0)),
+        "requirements_revision": int(manifest.get("requirements_revision", 0)),
+        "requirements_hash": stable_id(manifest.get("recorded_requirements_hash")),
+        "reasons": sorted(set(str(reason)[:240] for reason in reasons)),
+    }
+    return hashlib.sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()[:24]
+
+
+def is_stop_blocking_reason(reason: str) -> bool:
+    """Keep Stop strict for active data-risk states, not ledger bookkeeping noise."""
+    normalized = reason.casefold()
+    return "incomplete ledger transaction" in normalized
+
+
+def record_recovery_failure(ledger: Path, fingerprint: str, payload: dict[str, Any]) -> int:
+    count = 0
+
+    def mutate(state: dict[str, Any]) -> None:
+        nonlocal count
+        failures = state.setdefault("recovery_failures", {})
+        previous = failures.get(fingerprint)
+        count = int(previous.get("count", 0)) + 1 if isinstance(previous, dict) else 1
+        failures[fingerprint] = {
+            "count": count,
+            "first_epoch": float(previous.get("first_epoch", time.time())) if isinstance(previous, dict) else time.time(),
+            "last_epoch": time.time(),
+            "created_epoch": time.time(),
+            "session": stable_id(payload.get("session_id")),
+        }
+
+    update_state(ledger, mutate)
+    return count
+
+
+def clear_recovery_failures(ledger: Path) -> None:
+    def mutate(state: dict[str, Any]) -> None:
+        state["recovery_failures"] = {}
+
+    try:
+        update_state(ledger, mutate)
+    except (OSError, TimeoutError, ValueError):
+        pass
 
 
 def ledger_snapshot(root: Path, ledger: Path) -> dict[str, Any]:
@@ -257,17 +397,16 @@ def guard_key(payload: dict[str, Any]) -> str:
     return f"{session}:{turn or 'session'}"
 
 
-def set_turn_guard(ledger: Path, payload: dict[str, Any], snapshot: dict[str, Any], reason: str) -> None:
+def clear_turn_guard(ledger: Path, payload: dict[str, Any]) -> None:
     key = guard_key(payload)
 
     def mutate(state: dict[str, Any]) -> None:
-        state["turn_guards"][key] = {
-            **snapshot,
-            "reason": reason,
-            "created_epoch": time.time(),
-        }
+        state.get("turn_guards", {}).pop(key, None)
 
-    update_state(ledger, mutate)
+    try:
+        update_state(ledger, mutate)
+    except (OSError, TimeoutError, ValueError):
+        pass
 
 
 def pending_turn_guard(ledger: Path, payload: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -327,19 +466,15 @@ def tool_is_write_capable(payload: dict[str, Any]) -> bool:
     tool_name = str(payload.get("tool_name") or "")
     if tool_name in {"apply_patch", "Edit", "Write"}:
         return True
-    if tool_name != "Bash":
+    if tool_name.casefold() not in SHELL_TOOL_NAMES:
         return bool(WRITE_TOOL_NAME.search(tool_name))
-    tool_input = payload.get("tool_input")
-    command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    return not is_read_only_shell(command)
+    return not is_read_only_shell(shell_command(payload))
 
 
 def is_lifecycle_repair(payload: dict[str, Any], root: Path, ledger: Path) -> bool:
-    if str(payload.get("tool_name") or "") != "Bash":
+    if str(payload.get("tool_name") or "").casefold() not in SHELL_TOOL_NAMES:
         return False
-    tool_input = payload.get("tool_input")
-    command = str(tool_input.get("command") or "") if isinstance(tool_input, dict) else ""
-    tokens = shell_tokens(command)
+    tokens = shell_tokens(shell_command(payload))
     if not tokens:
         return False
     index = 0
@@ -397,6 +532,16 @@ def handle_session_start(payload: dict[str, Any], root: Path, ledger: Path) -> H
         result = context_state.automatic(
             root, ledger, "start", manifest_task(ledger), "", "", "", "", "active", MAX_RESUME_CHARS
         )
+        if result.get("action") == "blocked":
+            try:
+                context_state.automatic(
+                    root, ledger, "repair", "", "", "", "", "", "active", MAX_RESUME_CHARS
+                )
+                result = context_state.automatic(
+                    root, ledger, "start", manifest_task(ledger), "", "", "", "", "active", MAX_RESUME_CHARS
+                )
+            except (OSError, ValueError) as exc:
+                result["repair_error"] = str(exc)[:600]
         brief = str(result.get("resume", "")).strip()
         gate_closed = result.get("action") == "blocked"
         reason = "resume_blocked" if gate_closed else "resume_verified"
@@ -449,21 +594,11 @@ def handle_user_prompt(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
         return HookResult({}, "allow", "no_requirement_hint", (root, ledger))
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        message = "The durable-context ledger is invalid. Reconcile it before changing project state."
-        return HookResult(
-            additional_context("UserPromptSubmit", message, "Durable-context ledger needs repair"),
-            "warning",
-            "invalid_ledger",
-            (root, ledger),
-        )
-    snapshot = ledger_snapshot(root, ledger)
-    set_turn_guard(ledger, payload, snapshot, "requirement_hint")
-    message = (
-        "This prompt may change the objective, scope, route, acceptance standard, or an implementation detail. "
-        "Compare it with the current requirements and record one requirement revision before any project write. "
-        "Do not ask the user to manage the ledger."
-    )
-    return HookResult(additional_context("UserPromptSubmit", message), "guarded", "requirement_hint", (root, ledger))
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
+    # A lexical hint is an observation, not proof that the requirements changed.
+    # Keep the signal in bounded telemetry and let the active task decide whether
+    # a confirmed revision is needed after the current work continues.
+    return HookResult({}, "allow", "requirement_observed", (root, ledger))
 
 
 def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
@@ -471,54 +606,25 @@ def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookRe
         return HookResult({}, "allow", "read_only_tool", (root, ledger))
     if is_lifecycle_repair(payload, root, ledger):
         return HookResult({}, "allow", "lifecycle_repair", (root, ledger))
-    errors = context_state.verify(ledger, expected_root=root)
-    if errors:
-        reason = "Durable-context rejected this write because the project ledger is invalid: " + "; ".join(errors)
-        return HookResult(deny_tool(reason), "deny", "invalid_ledger", (root, ledger))
-    consistency = context_state.reconcile(ledger, expected_root=root)
-    if consistency.get("blocking"):
-        reasons = list(dict.fromkeys(
-            [str(item) for item in consistency.get("errors", [])]
-            + [str(item) for item in consistency.get("blocking_warnings", [])]
-        ))
-        reason = (
-            "Durable-context rejected this write because recovery is blocked by current-state drift. "
-            "Inspect the files and record a trusted checkpoint/rebaseline first: "
-            + "; ".join(reasons)
-        )
-        return HookResult(deny_tool(reason), "deny", "recovery_gate", (root, ledger))
-    snapshot = ledger_snapshot(root, ledger)
-    guard = pending_turn_guard(ledger, payload, snapshot)
-    if guard is not None:
-        reason = (
-            "Durable-context rejected this write because the current prompt may change project requirements, "
-            "but the ledger revision/hash has not changed yet. Record the requirement change through the "
-            "automatic lifecycle, then retry the write."
-        )
-        return HookResult(deny_tool(reason), "deny", "requirement_revision_pending", (root, ledger))
-    return HookResult({}, "allow", "ledger_valid", (root, ledger))
+    if not targets_ledger_state(payload, root, ledger):
+        return HookResult({}, "allow", "non_ledger_write", (root, ledger))
+    reason = (
+        "Durable-context rejected a direct write to the authoritative .agent-context ledger. "
+        "Use the trusted lifecycle helper so the revision, hash chain, transaction, and checkpoint stay consistent."
+    )
+    return HookResult(deny_tool(reason), "deny", "direct_ledger_write", (root, ledger))
 
 
 def handle_pre_compact(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        reason = "Durable-context stopped compaction because the ledger is invalid: " + "; ".join(errors)
-        return HookResult(
-            {"continue": False, "stopReason": reason[:1800], "systemMessage": "Compaction needs ledger repair"},
-            "deny",
-            "invalid_ledger",
-            (root, ledger),
-        )
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
     snapshot = ledger_snapshot(root, ledger)
     guard = pending_turn_guard(ledger, payload, snapshot)
     if guard is not None:
-        reason = "Record the pending requirement revision before compacting this task."
-        return HookResult(
-            {"continue": False, "stopReason": reason, "systemMessage": "Compaction paused for durable context"},
-            "deny",
-            "requirement_revision_pending",
-            (root, ledger),
-        )
+        clear_turn_guard(ledger, payload)
+        store_compaction(ledger, payload, snapshot)
+        return HookResult({}, "allow", "requirement_advisory", (root, ledger))
     store_compaction(ledger, payload, snapshot)
     return HookResult({}, "allow", "pre_compact_snapshot_saved", (root, ledger))
 
@@ -526,12 +632,7 @@ def handle_pre_compact(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
 def handle_post_compact(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        return HookResult(
-            {"systemMessage": "Durable-context detected an invalid ledger after compaction; repair it before editing."},
-            "warning",
-            "invalid_ledger",
-            (root, ledger),
-        )
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
     before = compaction_snapshot(ledger, payload)
     after = ledger_snapshot(root, ledger)
     if before is None:
@@ -562,20 +663,33 @@ def handle_stop(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult
         consistency = context_state.reconcile(ledger, expected_root=root)
         reasons.extend(str(item) for item in consistency.get("errors", []))
         reasons.extend(str(item) for item in consistency.get("warnings", []))
-        try:
-            snapshot = ledger_snapshot(root, ledger)
-            if pending_turn_guard(ledger, payload, snapshot) is not None:
-                reasons.append("the current prompt may contain an unrecorded requirement change")
-        except (OSError, ValueError):
-            pass
-        if manifest.get("status") == "complete" and not reasons:
-            return HookResult({}, "allow", "complete_clean", (root, ledger))
-        if not reasons:
+        blocking_reasons = [reason for reason in reasons if is_stop_blocking_reason(reason)]
+        advisory_reasons = [reason for reason in reasons if reason not in blocking_reasons]
+        if not blocking_reasons:
+            clear_recovery_failures(ledger)
+            if advisory_reasons:
+                return HookResult({}, "warning", "ledger_advisory", (root, ledger))
+            if manifest.get("status") == "complete":
+                return HookResult({}, "allow", "complete_clean", (root, ledger))
             return HookResult({}, "allow", "active_clean", (root, ledger))
+        fingerprint = recovery_fingerprint(manifest, blocking_reasons)
+        attempt = record_recovery_failure(ledger, fingerprint, payload)
+        if attempt >= RECOVERY_FAILURE_LIMIT:
+            message = (
+                "Durable-context recovery is still blocked for the same verified failure state. "
+                "Automatic continuation is disabled and this turn may stop safely. "
+                "Run the trusted lifecycle repair event after inspecting the reported ledger state."
+            )
+            return HookResult(
+                {"systemMessage": message},
+                "warning",
+                "recovery_circuit_open",
+                (root, ledger),
+            )
         reason = (
             "Before stopping, preserve the durable task state: "
-            + "; ".join(dict.fromkeys(reasons))
-            + ". Record or recover a checkpoint, then continue."
+            + "; ".join(dict.fromkeys(blocking_reasons))
+            + ". Run the trusted repair/recovery lifecycle, then continue once."
         )
         return HookResult({"decision": "block", "reason": reason[:2000]}, "continue", "dirty_ledger", (root, ledger))
     except Exception as exc:
@@ -589,7 +703,7 @@ def handle_stop(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult
 
 def dispatch(payload: dict[str, Any]) -> HookResult:
     event = str(payload.get("hook_event_name") or "").strip()
-    project = find_project(str(payload.get("cwd") or ""))
+    project = resolve_project(payload)
     if not project:
         return HookResult({}, "allow", "no_ledger", None)
     root, ledger = project
@@ -660,13 +774,22 @@ def process(payload: dict[str, Any], log_maximum: int = MAX_LOG_BYTES) -> HookRe
     try:
         result = dispatch(payload)
     except Exception as exc:
-        project = find_project(str(payload.get("cwd") or ""))
-        result = HookResult(
-            {"systemMessage": f"Durable-context hook warning: {exc}"},
-            "warning",
-            "unhandled_hook_error",
-            project,
-        )
+        if str(payload.get("hook_event_name") or "") == "PreToolUse" and names_ledger_state(payload):
+            result = HookResult(
+                deny_tool(f"Durable-context could not resolve one trusted project root: {exc}"),
+                "deny",
+                "project_resolution_failed",
+                None,
+            )
+        elif str(payload.get("hook_event_name") or "") == "PreToolUse":
+            result = HookResult({}, "warning", "project_resolution_warning", None)
+        else:
+            result = HookResult(
+                {"systemMessage": f"Durable-context hook warning: {exc}"},
+                "warning",
+                "unhandled_hook_error",
+                None,
+            )
     duration_ms = (time.perf_counter() - started) * 1000
     if result.project:
         record_event(result.project[1], payload, result, duration_ms, maximum=log_maximum)
@@ -697,49 +820,8 @@ def self_test() -> None:
                 "prompt": prompt_text,
             }
         )
-        if prompt.outcome != "guarded":
-            raise RuntimeError("self-test failed: requirement-bearing prompt was not guarded")
-        denied = process(
-            {
-                "hook_event_name": "PreToolUse",
-                "cwd": str(root),
-                "session_id": session,
-                "turn_id": turn,
-                "tool_name": "apply_patch",
-                "tool_input": {"command": "private-tool-input"},
-            }
-        )
-        if denied.outcome != "deny" or denied.reason != "requirement_revision_pending":
-            raise RuntimeError("self-test failed: unrecorded requirement write was not denied")
-        external_denied = process(
-            {
-                "hook_event_name": "PreToolUse",
-                "cwd": str(root),
-                "session_id": session,
-                "turn_id": turn,
-                "tool_name": "mcp__nuphus__browser_click",
-                "tool_input": {"selector": "private-selector"},
-            }
-        )
-        if external_denied.outcome != "deny":
-            raise RuntimeError("self-test failed: guarded external-state write was not denied")
-
-        context_state.automatic(
-            root,
-            ledger,
-            "change",
-            "",
-            "Hook detail recorded",
-            "",
-            "",
-            "",
-            "active",
-            3000,
-            "detail",
-            "self-test",
-            "guard revision advanced",
-            "",
-        )
+        if prompt.outcome != "allow" or prompt.reason != "requirement_observed" or prompt.payload:
+            raise RuntimeError("self-test failed: requirement-bearing prompt was not observed silently")
         allowed = process(
             {
                 "hook_event_name": "PreToolUse",
@@ -751,7 +833,19 @@ def self_test() -> None:
             }
         )
         if allowed.outcome != "allow":
-            raise RuntimeError("self-test failed: recorded requirement write stayed blocked")
+            raise RuntimeError("self-test failed: observed requirement hint blocked a project write")
+        external_allowed = process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(root),
+                "session_id": session,
+                "turn_id": turn,
+                "tool_name": "mcp__nuphus__browser_click",
+                "tool_input": {"selector": "private-selector"},
+            }
+        )
+        if external_allowed.outcome != "allow":
+            raise RuntimeError("self-test failed: observed requirement hint blocked an external write")
         read_only = process(
             {
                 "hook_event_name": "PreToolUse",
@@ -805,11 +899,13 @@ def self_test() -> None:
                 "session_id": session,
                 "turn_id": "turn-corrupt",
                 "tool_name": "apply_patch",
-                "tool_input": {"command": "private-corrupt-input"},
+                "tool_input": {
+                    "patch": f"*** Begin Patch\n*** Update File: {requirements_path}\nprivate-corrupt-input\n*** End Patch"
+                },
             }
         )
-        if corrupt.outcome != "deny" or corrupt.reason != "invalid_ledger":
-            raise RuntimeError("self-test failed: invalid ledger did not block a write")
+        if corrupt.outcome != "deny" or corrupt.reason != "direct_ledger_write":
+            raise RuntimeError("self-test failed: direct ledger write was not blocked")
         no_ledger = process({"hook_event_name": "PreToolUse", "cwd": str(root.parent)})
         if no_ledger.payload:
             raise RuntimeError("self-test failed: no-ledger project was not ignored")

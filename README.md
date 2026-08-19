@@ -9,8 +9,8 @@
 | 类别 | Skill | 主要责任 | 默认副作用 |
 | --- | --- | --- | --- |
 | 治理 | `bootstrap-codex-project` | 项目事实、文件权责、活动计划和迁移 | 依据用户授权生成项目文档 |
-| 治理 | `durable-context` | 跨会话恢复、基线漂移、有限检索和只读 Context MCP | 维护项目本地账本 |
-| 治理 | `human-centered-reasoning-guard` | 事实门禁、目标门禁、身份、回滚和完成验证 | 默认阻止未经验证的高风险写入 |
+| 治理 | `durable-context` | 跨会话恢复、基线漂移、有限检索和只读 Context MCP | 复杂任务维护项目本地账本；普通问题不建账 |
+| 治理 | `human-centered-reasoning-guard` | 事实门禁、目标门禁、身份、回滚和完成验证 | 只约束被调用的具体高风险动作，不阻断普通会话 |
 | 治理 | `deliberate-project` | 显式调用的多角度、证据驱动只读审议 | 不修改项目；经验目录另有明确授权时才写入 |
 | 原子 | `intent-alignment` | 把模糊请求压缩为目标、成功状态、范围和未知 | 只读 |
 | 原子 | `diagnose` | 竞争根因、复现路径、区分性检查和证据链 | 只读，除非用户另行授权修复 |
@@ -18,7 +18,7 @@
 | 原子 | `architecture-health` | 模块边界、依赖、接口、漂移、容量和回滚检查 | 只读审查 |
 | 原子 | `capability-director` | 判断能力错配，比较有限候选并输出薄 Receipt | 只读；不安装、不启用、不执行陌生能力 |
 
-四个现有 Skill 的源码来自各自公开仓库的已核验 `main` 版本；本整合仓库只保留源码和公开文档，不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前不附带许可证，因为许可证选择需要用户明确决定。
+四个成熟 Skill 首次从各自公开仓库的已核验 `main` 版本导入；导入完成后，本合集的 `main` 和 `skills/<name>` 是唯一长期维护权威。`docs/source-manifest.json` 中的旧仓库 URL 只保留迁移来源，不再作为上游。本仓库不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前不附带许可证，因为许可证选择需要用户明确决定。
 
 ## 怎么组合
 
@@ -107,25 +107,23 @@ Set-Location codex-governance-skills
 在仓库根目录运行：
 
 ```powershell
-python -X utf8 -m unittest discover -s tests -v
-python -X utf8 "$env:CODEX_HOME\skills\.system\skill-creator\scripts\quick_validate.py" .\skills\intent-alignment
-.\scripts\install.ps1 -TargetSkillsRoot (Join-Path $env:TEMP 'codex-skills-smoke')
 .\scripts\validate-repository.ps1
+.\scripts\install.ps1 -TargetSkillsRoot (Join-Path $env:TEMP 'codex-skills-smoke')
 ```
 
-测试会检查 9 个 Skill 的入口、YAML 元数据、组合合同、敏感文件排除和公开仓库结构。四个成熟 Skill 的原始测试仍保留在各自目录中，可按各目录 README 或 `tests/` 运行。`pytest` 若未安装，不代表 unittest 或 Skill 结构校验失败。
+验证脚本会运行合集合同测试、三套内嵌 Python 测试、human-centered guard 的 PowerShell 回归测试，以及本机可用时的全部 `quick_validate.py`。仓库合同还检查 Git 路径分隔符和待发布文本 blob 的 UTF-8/LF 规范，防止首次远端提交的问题回归。
 
 ## 旧仓库处理
 
-旧仓库的删除不是安装步骤，也不是本仓库自动行为。必须先核对新仓库远端 URL、默认分支、提交内容、安装结果和权限边界，再由用户明确确认具体要删除的仓库名。
+只有本合集是长期维护权威。旧 URL 仅作为 `legacy_import` 迁移证据；安装、开发和发布都不得再依赖它们。删除旧仓库仍不是安装器的自动行为，必须先核对合集远端、默认分支、提交内容、安装结果、回滚点和删除权限。
 
 ## 来源版本
 
 本次整合基线：
 
 - `bootstrap-codex-project`: `17a7d09bbef60c27461923916d709fc3175308a0`
-- `durable-context`: `ae3ae6d1e1d9e884a2d73ff33cf9b17d8573d3c9`
+- `durable-context`: `c903603a62e2bcf05491f1be562bf2b440c1c017`，并加入只读合集审计器及其测试
 - `human-centered-reasoning-guard`: `ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e`
 - `deliberate-project`: `b167dce30a46ff50bd321b69df52d9b37cf041c6`
 
-四个入口在上述基线上增加了最小组合合同；其余核心实现和测试保持来源版本结构。
+四个入口保留各自的组合合同；`deliberate-project` 的仓库级测试和夹具已适配到合集目录。后续变更只在本合集维护。

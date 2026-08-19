@@ -682,9 +682,9 @@ def continuity_snapshot(root: Path, context_dir: Path, manifest: dict[str, Any])
         "recovery_tier": 0,
         "searched_scope": ["current-ledger", "verified-project"],
         "budget_used": {"max_chars": 0, "history_included": False},
-        "blocking": bool(changed_fields),
+        "blocking": False,
         "next_action": (
-            "Reconcile changed baseline fields before editing."
+            "Review changed baseline fields before relying on the old checkpoint; normal work may continue."
             if changed_fields
             else "Continue from the current checkpoint; retrieve history only for a specific unresolved question."
         ),
@@ -1502,6 +1502,216 @@ def read_changes(context_dir: Path, maximum: int = 20) -> list[dict[str, Any]]:
     return entries[-maximum:]
 
 
+def strict_jsonl(path: Path, label: str) -> list[dict[str, Any]]:
+    """Read an audit projection without silently skipping malformed records."""
+    entries: list[dict[str, Any]] = []
+    if not path.is_file():
+        return entries
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{label} has invalid JSON on line {number}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"{label} entry on line {number} must be an object")
+        entries.append(value)
+    return entries
+
+
+def trusted_change_projection(context_dir: Path, manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate the append-only change projection before rebuilding derived files."""
+    entries = strict_jsonl(context_dir / "changes.jsonl", "changes.jsonl")
+    previous_hash = ""
+    seen_ids: set[str] = set()
+    revision = 0
+    requirement_hash = ""
+    checkpoints: list[int] = []
+    for number, entry in enumerate(entries, start=1):
+        event_id = str(entry.get("id", ""))
+        if not event_id or event_id in seen_ids:
+            raise ValueError(f"changes.jsonl has an invalid or duplicate id on line {number}")
+        seen_ids.add(event_id)
+        if entry.get("previous_event_hash", "") != previous_hash:
+            raise ValueError(f"changes.jsonl hash chain is broken on line {number}")
+        if entry.get("event_hash") != change_event_hash(entry):
+            raise ValueError(f"changes.jsonl event hash is invalid on line {number}")
+        previous_hash = str(entry["event_hash"])
+        kind = entry.get("kind")
+        if kind == "task_started":
+            if entry.get("revision") != 0:
+                raise ValueError(f"task_started revision is invalid on line {number}")
+            snapshot = entry.get("requirements_after")
+            if not isinstance(snapshot, str) or entry.get("requirements_hash") != sha256_text(snapshot):
+                raise ValueError(f"task_started requirements snapshot is invalid on line {number}")
+            requirement_hash = str(entry["requirements_hash"])
+        elif kind == "requirement_change":
+            before = entry.get("before_revision")
+            after = entry.get("after_revision")
+            if before != revision or not isinstance(after, int) or after != revision + 1:
+                raise ValueError(f"requirement revision chain is broken on line {number}")
+            snapshot = entry.get("requirements_after")
+            if not isinstance(snapshot, str) or entry.get("requirements_hash") != sha256_text(snapshot):
+                raise ValueError(f"requirement snapshot is invalid on line {number}")
+            revision = after
+            requirement_hash = str(entry["requirements_hash"])
+        elif kind == "checkpoint":
+            number_value = entry.get("checkpoint")
+            if not isinstance(number_value, int) or number_value <= 0:
+                raise ValueError(f"checkpoint projection is invalid on line {number}")
+            checkpoints.append(number_value)
+
+    if revision != requirements_revision(manifest):
+        raise ValueError("RECOVERY_REQUIRED: changes.jsonl requirements revision conflicts with manifest")
+    if requirement_hash and requirement_hash != str(manifest.get("recorded_requirements_hash", "")):
+        raise ValueError("RECOVERY_REQUIRED: changes.jsonl requirements hash conflicts with manifest")
+    expected_checkpoints = list(range(1, len(checkpoints) + 1))
+    if checkpoints != expected_checkpoints:
+        raise ValueError("RECOVERY_REQUIRED: changes.jsonl checkpoint sequence is ambiguous")
+    if len(checkpoints) != int(manifest.get("checkpoint", -1)):
+        raise ValueError("RECOVERY_REQUIRED: changes.jsonl cannot prove the manifest checkpoint")
+    return entries
+
+
+def repair_ledger(root: Path, context_dir: Path) -> dict[str, Any]:
+    """Repair only generated projections whose authoritative source is unambiguous."""
+    if not context_dir.is_dir():
+        raise ValueError("context directory does not exist")
+    wait_for_ledger_idle(context_dir)
+    if (context_dir / ".transaction.json").is_file():
+        raise ValueError("RECOVERY_REQUIRED: incomplete ledger transaction must be recovered first")
+
+    manifest = read_json(context_dir / "manifest.json")
+    root = root.resolve()
+    if canonical_path(manifest.get("root"), "manifest root") != root:
+        raise ValueError("RECOVERY_REQUIRED: ledger belongs to a different project root")
+    if file_hash(context_dir / "requirements.md") != manifest.get("recorded_requirements_hash"):
+        raise ValueError("RECOVERY_REQUIRED: requirements.md is not an authorized projection")
+
+    checkpoint_hashes = manifest.get("checkpoint_hashes")
+    if not isinstance(checkpoint_hashes, dict):
+        raise ValueError("RECOVERY_REQUIRED: checkpoint hashes are unavailable")
+    current_hashes = content_hashes(context_dir)
+    for name in ("task.md", "requirements.md", "findings.md", "decisions.md"):
+        expected = checkpoint_hashes.get(name)
+        if not expected or current_hashes.get(name) != expected:
+            raise ValueError(f"RECOVERY_REQUIRED: authoritative ledger file drifted: {name}")
+
+    baseline = continuity_snapshot(root, context_dir, manifest)
+
+    changes = trusted_change_projection(context_dir, manifest)
+    history = strict_jsonl(context_dir / "history.jsonl", "history.jsonl")
+    history_checkpoints = [
+        entry.get("number")
+        for entry in history
+        if entry.get("kind") == "checkpoint"
+    ]
+    expected_history = list(range(1, int(manifest.get("checkpoint", 0)) + 1))
+    repaired: list[str] = []
+    recovered_history_entry: dict[str, Any] | None = None
+
+    if history_checkpoints != expected_history:
+        if (
+            len(history_checkpoints) >= len(expected_history)
+            or history_checkpoints != expected_history[: len(history_checkpoints)]
+            or any(entry.get("kind") not in {"init", "checkpoint"} for entry in history)
+        ):
+            raise ValueError("RECOVERY_REQUIRED: history.jsonl checkpoint projection is ambiguous")
+        missing = expected_history[len(history_checkpoints) :]
+        if len(missing) != 1:
+            raise ValueError("RECOVERY_REQUIRED: more than one history checkpoint is missing")
+        missing_number = missing[0]
+        source = next(
+            (entry for entry in changes if entry.get("kind") == "checkpoint" and entry.get("checkpoint") == missing_number),
+            None,
+        )
+        if source is None:
+            raise ValueError("RECOVERY_REQUIRED: missing checkpoint is not proven by changes.jsonl")
+        recovered_history_entry = {
+            "at": str(source.get("at") or utc_now()),
+            "kind": "checkpoint",
+            "number": missing_number,
+            "status": str(source.get("status") or "active"),
+            "summary": "Recovered checkpoint metadata from changes.jsonl; original detail was not preserved.",
+            "next_action": "Verify current files before relying on this recovered checkpoint.",
+            "verified": "Checkpoint existence is proven by the append-only changes log; detail requires revalidation.",
+            "risks": "Recovered projection; do not treat its missing detail as historical fact.",
+        }
+        repaired.append(f"history.jsonl checkpoint {missing_number}")
+        history = [*history, recovered_history_entry]
+
+    latest = next(
+        (entry for entry in reversed(history) if entry.get("kind") == "checkpoint"),
+        None,
+    )
+    if int(manifest.get("checkpoint", 0)) and latest is None:
+        raise ValueError("RECOVERY_REQUIRED: no trusted latest checkpoint is available")
+    handoff_expected = checkpoint_hashes.get("handoff")
+    handoff_drifted = bool(handoff_expected and current_hashes.get("handoff") != handoff_expected)
+    rendered_handoff: str | None = None
+    if handoff_drifted or recovered_history_entry is not None:
+        if latest is None:
+            summary = "Recovered generated handoff; no checkpoint detail is available."
+            next_action = "Verify the current project before continuing."
+            verified = "No checkpoint evidence was available; this handoff is a recovery marker only."
+            risks = "Recovery marker requires explicit verification before relying on prior context."
+        else:
+            summary = str(latest.get("summary") or "Recovered generated handoff from the latest checkpoint.")
+            next_action = str(latest.get("next_action") or "Verify the current project before continuing.")
+            verified = str(latest.get("verified") or "Checkpoint detail was incomplete; revalidate before relying on it.")
+            risks = str(latest.get("risks") or "Revalidate the recovered handoff before relying on it.")
+        rendered_handoff = render_handoff(manifest, summary, next_action, verified, risks)
+        if (context_dir / "handoff.md").read_text(encoding="utf-8") != rendered_handoff:
+            repaired.append("handoff.md")
+
+    if not repaired:
+        errors = verify(context_dir, expected_root=root)
+        if errors:
+            raise ValueError("RECOVERY_REQUIRED: no safe projection repair applies: " + "; ".join(errors))
+        return {
+            "action": "already_valid",
+            "repaired": [],
+            "verified": True,
+            "baseline_status": baseline.get("baseline_status", "UNKNOWN"),
+            "rebaseline_required": baseline.get("baseline_status") == "CHANGED",
+        }
+
+    with ledger_transaction(context_dir, "repair"):
+        if recovered_history_entry is not None:
+            append_jsonl(context_dir / "history.jsonl", recovered_history_entry)
+        if rendered_handoff is not None and "handoff.md" in repaired:
+            atomic_write(context_dir / "handoff.md", rendered_handoff)
+        now = utc_now()
+        event = append_change(
+            context_dir,
+            {
+                "id": uuid.uuid4().hex,
+                "at": now,
+                "kind": "repair",
+                "category": "recovery",
+                "summary": "Repaired generated ledger projections: " + ", ".join(repaired),
+                "source": "durable-context-repair",
+                "status": "repaired",
+            },
+        )
+        manifest = read_json(context_dir / "manifest.json")
+        manifest["last_event_id"] = event["id"]
+        manifest["updated_at"] = now
+        manifest["checkpoint_hashes"] = content_hashes(context_dir)
+        write_manifest(context_dir, manifest)
+        errors = verify(context_dir, ignore_transaction=True, expected_root=root)
+        if errors:
+            raise ValueError("RECOVERY_REQUIRED: repair verification failed: " + "; ".join(errors))
+    return {
+        "action": "repaired",
+        "repaired": repaired,
+        "verified": True,
+        "baseline_status": baseline.get("baseline_status", "UNKNOWN"),
+        "rebaseline_required": baseline.get("baseline_status") == "CHANGED",
+    }
+
+
 def compact_change_entries(entries: list[dict[str, Any]]) -> str:
     allowed = (
         "id",
@@ -1700,7 +1910,6 @@ def reconcile(context_dir: Path, expected_root: Path | None = None) -> dict[str,
         if baseline_changed:
             message = "baseline drift: " + ", ".join(baseline_changed)
             warnings.append(message)
-            blocking_warnings.append(message)
 
     return {
         "valid": not errors,
@@ -1845,6 +2054,9 @@ def automatic(
             expected_root=root,
         )
         return {"action": "change_recorded", "context_dir": str(context_dir), "change": payload}
+
+    if event == "repair":
+        return {"context_dir": str(context_dir), **repair_ledger(root, context_dir)}
 
     if event == "reconcile":
         return {"action": "reconciled", "context_dir": str(context_dir), **reconcile(context_dir, root)}
@@ -2281,9 +2493,9 @@ continuity_parent_task_id: none
             or navigation.get("current_route_coordinate") != "R7:A3/B2"
             or changed_baseline.get("baseline_status") != "CHANGED"
             or "plans_hash" not in changed_baseline.get("changed_fields", [])
-            or "RECOVERY GATE" not in navigation_resume
+            or "RECOVERY GATE" in navigation_resume
         ):
-            raise RuntimeError("self-test failed: plan drift was not gated")
+            raise RuntimeError("self-test failed: plan drift was not reported as a non-blocking observation")
         checkpoint(
             context_dir,
             "Rebaselined the verified navigation plan.",
@@ -2487,7 +2699,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_location_arguments(verify_parser)
     auto_parser = subparsers.add_parser("auto", help=argparse.SUPPRESS)
     add_location_arguments(auto_parser)
-    auto_parser.add_argument("--event", choices=("start", "recover", "switch", "checkpoint", "change", "reconcile", "finish", "verify"), required=True, help=argparse.SUPPRESS)
+    auto_parser.add_argument("--event", choices=("start", "recover", "switch", "checkpoint", "change", "repair", "reconcile", "finish", "verify"), required=True, help=argparse.SUPPRESS)
     auto_parser.add_argument("--task", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--summary", default="", help=argparse.SUPPRESS)
     auto_parser.add_argument("--next-action", default="", help=argparse.SUPPRESS)

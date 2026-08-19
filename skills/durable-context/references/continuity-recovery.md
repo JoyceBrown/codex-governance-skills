@@ -15,6 +15,14 @@ The generated `handoff.md` and `resume` output carry one compact `CONTINUITY STA
 
 The project-local ledger remains the authority. A compaction summary, old handoff, Obsidian note, MCP result, or model recollection is evidence to verify, never a replacement.
 
+## Repair Boundary
+
+Interrupted ledger writes are recovered transactionally. For projection drift, use the internal automatic `repair` event only after the current project root and manifest are verified. The repair path validates the append-only `changes.jsonl` chain and repairs at most one trailing history checkpoint when the checkpoint number is uniquely proven. It may regenerate `handoff.md` only when its recorded hash has actually drifted or the missing history checkpoint was repaired.
+
+Repair fails closed with `RECOVERY_REQUIRED` when requirements, authoritative ledger files, transaction state, or checkpoint history is ambiguous. A uniquely proven generated projection may be repaired while the project baseline has changed, but the repair preserves that drift and returns `rebaseline_required`; only a later explicit checkpoint after current-file inspection may reopen the write gate. Repair never rewrites project source or guesses missing historical detail.
+
+The Stop Hook treats checkpoint, revision, generated-projection, and completion-status mismatches as telemetry-only bookkeeping advisories with no visible Hook output, and never requests continuation for them. An active recovery condition records a bounded, privacy-safe failure fingerprint and is allowed one continuation attempt; repeated identical failures open a circuit and return a warning without a continuation decision. A successful verified recovery or clean checkpoint clears the failure state. Lexical requirement hints are observations only and never become Stop reasons.
+
 ## Bounded Tiers
 
 Follow the tiers in order and stop when the current task is actionable:
@@ -65,4 +73,4 @@ Automatic reuse requires `status: VALID`, matching question/scope/source fingerp
 
 ## Baseline Drift
 
-At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, project_fingerprint, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` closes the write/retrieval gate until the current files are inspected and a trusted checkpoint rebaselines the project; it does not mean the implementation is wrong. Do not proceed with a stale or unrecorded requirements hash.
+At initialization and each verified checkpoint, record the baseline tuple `{git_revision, plans_hash, project_fingerprint, requirements_hash, requirements_revision}`. On resume, compare the current tuple with the recorded tuple. `CHANGED` is an observer signal that identifies which current evidence should be rechecked; it never closes ordinary project writes or read-only retrieval by itself. Verified ledger corruption and unrecorded requirements state remain explicit uncertainty, while normal source, Git, and plan changes may continue and be rebaselined at the next trusted checkpoint.
