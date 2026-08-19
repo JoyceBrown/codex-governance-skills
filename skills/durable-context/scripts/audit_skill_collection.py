@@ -171,11 +171,8 @@ def _manifest(root: Path) -> tuple[str, int, list[str], dict[str, str]]:
 
 
 def _git_info(skill_dir: Path) -> Optional[dict[str, Any]]:
-    if not (skill_dir / ".git").exists():
-        return None
-
-    def run(*args: str) -> str:
-        result = subprocess.run(
+    def execute(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
             ["git", "-C", str(skill_dir), *args],
             capture_output=True,
             text=True,
@@ -184,18 +181,32 @@ def _git_info(skill_dir: Path) -> Optional[dict[str, Any]]:
             timeout=10,
             check=False,
         )
+
+    try:
+        probe = execute("rev-parse", "--show-toplevel")
+        if probe.returncode != 0 or not probe.stdout.strip():
+            return None
+        repository_root = _path(probe.stdout.strip())
+        relative_skill = skill_dir.resolve().relative_to(repository_root)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+    def run(*args: str) -> str:
+        result = execute(*args)
         return (result.stdout or "").strip()
 
     try:
         return {
-            "path": str(skill_dir),
+            "path": str(repository_root),
+            "scope": "skill" if relative_skill == Path(".") else "containing_worktree",
+            "skill_path": relative_skill.as_posix(),
             "head": run("rev-parse", "HEAD") or None,
             "branch": run("branch", "--show-current") or None,
             "dirty": bool(run("status", "--porcelain")),
             "remotes": run("remote", "-v").splitlines(),
         }
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"path": str(skill_dir), "error": str(exc)}
+        return {"path": str(repository_root), "skill_path": relative_skill.as_posix(), "error": str(exc)}
 
 
 def _scope_for_file(path: Path, skill_dir: Path) -> str:

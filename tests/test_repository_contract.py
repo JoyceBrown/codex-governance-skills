@@ -57,7 +57,7 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             (ROOT / "docs" / "source-manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(
-            manifest["schema"], "codex-governance-skills-source-manifest-v2"
+            manifest["schema"], "codex-governance-skills-source-manifest-v3"
         )
         self.assertEqual(manifest["authority"]["repository"], COLLECTION_REPOSITORY)
         records = {record["skill"]: record for record in manifest["skills"]}
@@ -66,6 +66,17 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             self.assertEqual(record["authority_repository"], COLLECTION_REPOSITORY)
             self.assertEqual(record["source_path"], f"skills/{name}")
             self.assertRegex(record["legacy_import"]["commit"], r"^[0-9a-f]{40}$")
+            archive_ref = record["legacy_import"]["archive_ref"]
+            self.assertEqual(archive_ref, f"refs/tags/legacy/{name}/main")
+            archived_commit = subprocess.run(
+                ["git", "rev-parse", f"{archive_ref}^{{commit}}"],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+            ).stdout.strip()
+            self.assertEqual(archived_commit, record["legacy_import"]["commit"])
             self.assertNotEqual(
                 record["legacy_import"]["repository"], COLLECTION_REPOSITORY
             )

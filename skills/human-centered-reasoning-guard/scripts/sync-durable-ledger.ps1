@@ -11,8 +11,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$codexHome = if (-not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
-$contextState = Join-Path $codexHome 'skills\durable-context\scripts\context_state.py'
+$skillsRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$contextState = Join-Path $skillsRoot 'durable-context\scripts\context_state.py'
 if (-not (Test-Path -LiteralPath $contextState)) { throw 'durable-context lifecycle helper is unavailable.' }
 $root = (Resolve-Path -LiteralPath $ProjectRoot).Path
 $ledger = Join-Path $root '.agent-context'
@@ -79,7 +79,15 @@ if ($DryRun) { $result | ConvertTo-Json -Depth 6; exit 0 }
 $checkpointArgs = @('--root', $root, 'checkpoint', '--summary', $summary, '--next-action', $NextAction, '--status', $status)
 if (-not [string]::IsNullOrWhiteSpace($verified)) { $checkpointArgs += @('--verified', $verified) }
 if (-not [string]::IsNullOrWhiteSpace($risks)) { $checkpointArgs += @('--risks', $risks) }
-& py -3 $contextState @checkpointArgs
+$pyLauncher = if ($env:OS -eq 'Windows_NT') { Get-Command py -ErrorAction SilentlyContinue } else { $null }
+if ($pyLauncher) {
+    & $pyLauncher.Source -3 $contextState @checkpointArgs | Out-Null
+} else {
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+    if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $python) { throw 'A Python 3 interpreter is required for the durable-context checkpoint.' }
+    & $python.Source $contextState @checkpointArgs | Out-Null
+}
 if ($LASTEXITCODE -ne 0) { throw "durable-context checkpoint failed with exit code $LASTEXITCODE." }
 $result['dry_run'] = $false
 $result | ConvertTo-Json -Depth 6

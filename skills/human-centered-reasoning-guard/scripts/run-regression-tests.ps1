@@ -329,19 +329,31 @@ Pass-Case 'memory retrieval PowerShell fallback preserves scope filtering' {
     }
 }
 
-Pass-Case 'durable ledger bridge dry-run preserves the single-ledger boundary' {
+Pass-Case 'durable ledger bridge writes through the single-ledger boundary' {
     $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('hcrg-ledger-bridge-' + [guid]::NewGuid().ToString('N'))
     $ledgerRoot = Join-Path $fixtureRoot '.agent-context'
-    New-Item -ItemType Directory -Path $ledgerRoot -Force | Out-Null
+    New-Item -ItemType Directory -Path $fixtureRoot -Force | Out-Null
+    $hadCodexHome = Test-Path Env:CODEX_HOME
+    $oldCodexHome = $env:CODEX_HOME
+    $hadUserProfile = Test-Path Env:USERPROFILE
+    $oldUserProfile = $env:USERPROFILE
     try {
-        @{ version = 5; task_id = 'fixture-task'; task = 'ledger bridge fixture'; status = 'active'; checkpoint = 0; requirements_revision = 1 } | ConvertTo-Json -Compress | Set-Content -LiteralPath (Join-Path $ledgerRoot 'manifest.json') -Encoding UTF8
+        Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue
+        Remove-Item Env:USERPROFILE -ErrorAction SilentlyContinue
+        $contextState = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'durable-context\scripts\context_state.py'
+        & python $contextState --root $fixtureRoot init --task 'ledger bridge fixture' | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'Fixture ledger initialization failed.' }
         $plan = @{ schema='hcrg-plan-reconciliation-v1'; task_id='fixture-task'; proposed_plan_version='R2'; decision='integrate'; status='accepted_for_planning'; next_action='inspect bounded target' } | ConvertTo-Json -Compress
-        $result = & $ledgerBridge -ProjectRoot $fixtureRoot -PlanJson $plan -DryRun | ConvertFrom-Json
-        if (-not $result.dry_run -or $result.checkpoint_status -ne 'active') { throw 'Ledger dry-run did not preserve active status.' }
+        $result = & $ledgerBridge -ProjectRoot $fixtureRoot -PlanJson $plan | ConvertFrom-Json
+        if ($result.dry_run -or $result.checkpoint_status -ne 'active') { throw 'Ledger bridge did not write an active checkpoint.' }
+        $manifest = Get-Content -Raw -LiteralPath (Join-Path $ledgerRoot 'manifest.json') | ConvertFrom-Json
+        if ([int]$manifest.checkpoint -ne 1) { throw 'Ledger bridge did not advance the authoritative checkpoint.' }
         $drift = @{ schema='hcrg-drift-report-v1'; drift_level=2; recommendation='stop_current_patch_and_investigate_boundary' } | ConvertTo-Json -Compress
         $blocked = & $ledgerBridge -ProjectRoot $fixtureRoot -DriftJson $drift -DryRun | ConvertFrom-Json
         if (-not $blocked.dry_run -or $blocked.checkpoint_status -ne 'blocked') { throw 'Ledger dry-run did not block drift level 2.' }
     } finally {
+        if ($hadCodexHome) { $env:CODEX_HOME = $oldCodexHome } else { Remove-Item Env:CODEX_HOME -ErrorAction SilentlyContinue }
+        if ($hadUserProfile) { $env:USERPROFILE = $oldUserProfile } else { Remove-Item Env:USERPROFILE -ErrorAction SilentlyContinue }
         if (Test-Path -LiteralPath $fixtureRoot) { Remove-Item -LiteralPath $fixtureRoot -Recurse -Force }
     }
 }

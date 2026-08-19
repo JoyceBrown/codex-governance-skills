@@ -40,13 +40,10 @@ examples/                脱敏后的 Hook 和 MCP 配置模板
 
 ## 安装为 Codex 技能
 
-把仓库目录复制到 Codex 技能目录：
+从 `codex-governance-skills` 合集根目录运行安装器：
 
 ```powershell
-$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
-$skillRoot = Join-Path $codexHome 'skills\durable-context'
-New-Item -ItemType Directory -Force -Path $skillRoot | Out-Null
-Copy-Item -Recurse -Force .\* $skillRoot
+.\scripts\install.ps1 -Names durable-context
 ```
 
 安装后重新打开 Codex 会话。复杂任务、可能被压缩的任务和暂停后继续的任务会自动使用本技能，不需要用户手动输入命令。
@@ -98,32 +95,38 @@ Hook、MCP 和 CLI 的 JSON/文本协议统一使用 UTF-8；Hook 的生命周�
 
 ## 自测与验证
 
-在仓库根目录运行：
+在合集根目录运行完整验证：
 
 ```powershell
-py -3 .\scripts\context_state.py self-test
-py -3 .\scripts\context_mcp.py --self-test
-py -3 .\scripts\obsidian_bridge.py self-test
-py -3 -m py_compile .\scripts\context_state.py .\scripts\codex_hook.py .\scripts\context_mcp.py .\scripts\obsidian_bridge.py
-py -3 -m unittest discover -s .\tests -v
+.\scripts\validate-repository.ps1
+```
+
+只运行本技能的自测时，使用合集内的明确路径：
+
+```powershell
+py -3 .\skills\durable-context\scripts\context_state.py self-test
+py -3 .\skills\durable-context\scripts\context_mcp.py --self-test
+py -3 .\skills\durable-context\scripts\obsidian_bridge.py self-test
+py -3 -m py_compile .\skills\durable-context\scripts\context_state.py .\skills\durable-context\scripts\codex_hook.py .\skills\durable-context\scripts\context_mcp.py .\skills\durable-context\scripts\obsidian_bridge.py
+py -3 -m unittest discover -s .\skills\durable-context\tests -v
 ```
 
 验证真实项目 ledger：
 
 ```powershell
-py -3 .\scripts\context_state.py --root 'C:\path\to\project' verify
+py -3 .\skills\durable-context\scripts\context_state.py --root 'C:\path\to\project' verify
 ```
 
 只读审计技能源树和生效安装树（默认输出 JSON）：
 
 ```powershell
-py -3 .\scripts\audit_skill_collection.py `
+py -3 .\skills\durable-context\scripts\audit_skill_collection.py `
   --source-root 'C:\path\to\skill-sources' `
   --install-root "$env:CODEX_HOME\skills" `
   --hooks "$env:CODEX_HOME\hooks.json"
 ```
 
-审计会校验 `SKILL.md` frontmatter、重复名称、`runtime.conf` 脚本目标、当前 Hook 路径、嵌套 Git 状态，以及按 LF 归一化后的源/安装清单哈希。它只读，不会修复、提交或推送；历史文档中的旧路径会作为警告保留，生效 Hook 或运行时中的失效旧路径才会使状态变为 `fail`。
+审计会校验 `SKILL.md` frontmatter、重复名称、`runtime.conf` 脚本目标、当前 Hook 路径、技能自身或其所在合集工作树的 Git 状态，以及按 LF 归一化后的源/安装清单哈希。它只读，不会修复、提交或推送；历史文档中的旧路径会作为警告保留，生效 Hook 或运行时中的失效旧路径才会使状态变为 `fail`。
 
 ## 已知边界
 

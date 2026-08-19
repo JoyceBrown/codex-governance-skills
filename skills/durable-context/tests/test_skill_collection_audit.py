@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +62,29 @@ class SkillCollectionAuditTests(unittest.TestCase):
             report = audit.audit(install_root=install, validator_path=Path("does-not-exist"))
             self.assertEqual(report["status"], "warning")
             self.assertTrue(any(item["code"] == "STALE_HISTORICAL_PATH" for item in report["issues"]))
+
+    def test_source_skill_inherits_containing_collection_git_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            repository = root / "collection"
+            source = repository / "skills"
+            install = root / "install"
+            self.write(source / "alpha" / "SKILL.md", VALID_SKILL.format(name="alpha"))
+            self.write(install / "alpha" / "SKILL.md", VALID_SKILL.format(name="alpha"))
+            subprocess.run(["git", "init", "-b", "main", str(repository)], check=True, capture_output=True)
+            subprocess.run(["git", "-C", str(repository), "config", "user.name", "Audit Fixture"], check=True)
+            subprocess.run(["git", "-C", str(repository), "config", "user.email", "audit@example.invalid"], check=True)
+            subprocess.run(["git", "-C", str(repository), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(repository), "commit", "-m", "fixture"], check=True, capture_output=True)
+
+            report = audit.audit(install_root=install, source_roots=[source], validator_path=Path("does-not-exist"))
+            source_record = next(item for item in report["skills"]["source"] if item["name"] == "alpha")
+            self.assertEqual(source_record["git"]["path"], str(repository.resolve()))
+            self.assertEqual(source_record["git"]["scope"], "containing_worktree")
+            self.assertEqual(source_record["git"]["skill_path"], "skills/alpha")
+            self.assertEqual(source_record["git"]["branch"], "main")
+            self.assertFalse(source_record["git"]["dirty"])
+            self.assertRegex(source_record["git"]["head"], r"^[0-9a-f]{40}$")
 
 
 if __name__ == "__main__":

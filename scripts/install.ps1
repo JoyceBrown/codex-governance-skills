@@ -1,5 +1,6 @@
 param(
     [string]$TargetSkillsRoot,
+    [string]$BackupRoot,
     [string[]]$Names,
     [switch]$Force
 )
@@ -33,6 +34,17 @@ if ($unknown.Count -gt 0) { throw "Unknown Skill name(s): $($unknown -join ', ')
 $targetRoot = [IO.Path]::GetFullPath($TargetSkillsRoot)
 New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
 
+if ([string]::IsNullOrWhiteSpace($BackupRoot)) {
+    $targetParent = Split-Path -Parent $targetRoot
+    $targetLeaf = Split-Path -Leaf $targetRoot
+    $BackupRoot = Join-Path (Join-Path $targetParent ($targetLeaf + '-backups')) 'codex-governance-skills'
+}
+$backupRoot = [IO.Path]::GetFullPath($BackupRoot)
+$targetPrefix = $targetRoot.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if ($backupRoot.Equals($targetRoot, [StringComparison]::OrdinalIgnoreCase) -or $backupRoot.StartsWith($targetPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'BackupRoot must be outside TargetSkillsRoot so backup copies cannot be discovered as active Skills.'
+}
+
 $uniqueNames = @($Names | Select-Object -Unique)
 if ($uniqueNames.Count -ne $Names.Count) { throw 'Names must not contain duplicates.' }
 
@@ -46,6 +58,7 @@ function Remove-InstallPath([string]$Path) {
 
 $transactionId = [guid]::NewGuid().ToString('N')
 $backupStamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ') + '-' + $transactionId.Substring(0, 8)
+$backupTransactionRoot = Join-Path $backupRoot $backupStamp
 $plans = @()
 
 # Preflight every destination before touching any installed Skill.
@@ -61,7 +74,7 @@ foreach ($name in $Names) {
 
     $staging = Join-Path $targetRoot ('.install-' + $name + '-' + $transactionId)
     if (Test-Path -LiteralPath $staging) { throw "Staging path already exists: $staging" }
-    $backup = if ($destinationExists) { "$destination.backup-$backupStamp" } else { $null }
+    $backup = if ($destinationExists) { Join-Path $backupTransactionRoot $name } else { $null }
     if ($backup -and (Test-Path -LiteralPath $backup)) { throw "Backup path already exists: $backup" }
 
     $plans += [pscustomobject]@{
@@ -76,11 +89,23 @@ foreach ($name in $Names) {
     }
 }
 
+$hasBackups = @($plans | Where-Object DestinationExists).Count -gt 0
+if ($hasBackups) {
+    if ((Test-Path -LiteralPath $backupRoot) -and -not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
+        throw "BackupRoot is not a directory: $backupRoot"
+    }
+    if (Test-Path -LiteralPath $backupTransactionRoot) { throw "Backup transaction path already exists: $backupTransactionRoot" }
+}
+
 $receipt = @()
 try {
     # Stage the complete bundle before changing any destination.
     foreach ($plan in $plans) {
         Copy-Item -LiteralPath $plan.Source -Destination $plan.Staging -Recurse
+    }
+
+    if ($hasBackups) {
+        New-Item -ItemType Directory -Path $backupTransactionRoot -Force | Out-Null
     }
 
     # Commit each staged directory; the catch block rolls back the whole bundle.
@@ -110,6 +135,9 @@ try {
     }
     if ($rollbackErrors.Count -gt 0) {
         throw "Bundle install failed and rollback was incomplete: $($rollbackErrors -join '; '). Original: $($failure.Exception.Message)"
+    }
+    if ((Test-Path -LiteralPath $backupTransactionRoot -PathType Container) -and @([IO.Directory]::EnumerateFileSystemEntries($backupTransactionRoot)).Count -eq 0) {
+        [IO.Directory]::Delete($backupTransactionRoot, $false)
     }
     throw $failure
 }

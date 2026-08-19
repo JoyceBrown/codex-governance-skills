@@ -341,16 +341,16 @@ AGENTS.md
 
 ## 安装
 
-复制仓库到个人 Codex Skills 目录：
+从 `codex-governance-skills` 合集根目录运行安装器：
 
-```text
-%USERPROFILE%\.codex\skills\bootstrap-codex-project\
+```powershell
+.\scripts\install.ps1 -Names bootstrap-codex-project
 ```
 
-如果使用自定义 `CODEX_HOME`：
+如果需要安装到自定义技能根目录：
 
-```text
-%CODEX_HOME%\skills\bootstrap-codex-project\
+```powershell
+.\scripts\install.ps1 -Names bootstrap-codex-project -TargetSkillsRoot 'E:\path\to\.codex\skills'
 ```
 
 安装后重新打开一个 Codex 任务，让 Skill 元数据重新加载。

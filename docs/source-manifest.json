@@ -1,5 +1,5 @@
 {
-  "schema": "codex-governance-skills-source-manifest-v2",
+  "schema": "codex-governance-skills-source-manifest-v3",
   "generated_at": "2026-08-20",
   "authority": {
     "repository": "https://github.com/JoyceBrown/codex-governance-skills",
@@ -13,7 +13,8 @@
       "authority_repository": "https://github.com/JoyceBrown/codex-governance-skills",
       "legacy_import": {
         "repository": "https://github.com/JoyceBrown/bootstrap-codex-project",
-        "commit": "17a7d09bbef60c27461923916d709fc3175308a0"
+        "commit": "17a7d09bbef60c27461923916d709fc3175308a0",
+        "archive_ref": "refs/tags/legacy/bootstrap-codex-project/main"
       },
       "collection_changes": ["bounded composition contract"]
     },
@@ -23,7 +24,8 @@
       "authority_repository": "https://github.com/JoyceBrown/codex-governance-skills",
       "legacy_import": {
         "repository": "https://github.com/JoyceBrown/durable-context",
-        "commit": "c903603a62e2bcf05491f1be562bf2b440c1c017"
+        "commit": "c903603a62e2bcf05491f1be562bf2b440c1c017",
+        "archive_ref": "refs/tags/legacy/durable-context/main"
       },
       "collection_changes": [
         "read-only skill collection auditor",
@@ -36,7 +38,8 @@
       "authority_repository": "https://github.com/JoyceBrown/codex-governance-skills",
       "legacy_import": {
         "repository": "https://github.com/JoyceBrown/human-centered-reasoning-guard",
-        "commit": "ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e"
+        "commit": "ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e",
+        "archive_ref": "refs/tags/legacy/human-centered-reasoning-guard/main"
       },
       "collection_changes": [
         "bounded composition contract",
@@ -50,6 +53,7 @@
       "legacy_import": {
         "repository": "https://github.com/JoyceBrown/deliberate-project",
         "commit": "b167dce30a46ff50bd321b69df52d9b37cf041c6",
+        "archive_ref": "refs/tags/legacy/deliberate-project/main",
         "source_subdirectory": "deliberate-project"
       },
       "collection_changes": [
