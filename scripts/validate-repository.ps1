@@ -23,9 +23,14 @@ $guardRegression = Join-Path $root 'skills\human-centered-reasoning-guard\script
 & $guardRegression
 if ($LASTEXITCODE -ne 0) { throw 'Human-centered guard regression tests failed.' }
 
-$codexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $env:USERPROFILE '.codex' }
-$validator = Join-Path $codexRoot 'skills\.system\skill-creator\scripts\quick_validate.py'
-if (Test-Path -LiteralPath $validator) {
+$codexRoot = if (-not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
+    $env:CODEX_HOME
+} else {
+    $userHome = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    if ([string]::IsNullOrWhiteSpace($userHome)) { $null } else { Join-Path $userHome '.codex' }
+}
+$validator = if ($codexRoot) { Join-Path $codexRoot 'skills\.system\skill-creator\scripts\quick_validate.py' } else { $null }
+if ($validator -and (Test-Path -LiteralPath $validator)) {
     foreach ($skill in Get-ChildItem -LiteralPath (Join-Path $root 'skills') -Directory) {
         python -X utf8 $validator $skill.FullName
         if ($LASTEXITCODE -ne 0) { throw "Skill validation failed: $($skill.Name)" }
