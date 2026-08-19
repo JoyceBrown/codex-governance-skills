@@ -104,6 +104,18 @@ Use the bundled read-only Context MCP when another Codex surface or third-party 
 - Treat MCP output as a read-only view of the project-local ledger. Route every semantic write, requirement change, checkpoint, and task switch back through the Skill-controlled lifecycle.
 - Do not add an MCP write tool, background daemon, SQLite index, or multi-writer broker without measured evidence that the narrower design is insufficient.
 
+## Composition Contract
+
+This Skill is independently usable and remains the only authority for the project continuity ledger. Optional integrations consume a bounded envelope with `request_id`, `status`, `scope`, `evidence_refs`, `next_action`, `budget`, and baseline hashes; they never receive raw prompt history or ledger internals by default.
+
+- `bootstrap-codex-project` owns project-file structure and plan/requirements ownership. This Skill verifies continuity and reports drift; it does not rewrite project plans.
+- `intent-alignment` may provide a goal summary for a new turn. Treat it as an input to requirement-change detection, never as a replacement for `requirements.md` or a user decision.
+- `diagnose`, `architecture-health`, and `tdd-loop` may add evidence references. Accept only verified, bounded references and keep their conclusions outside the ledger until the normal lifecycle records them.
+- `human-centered-reasoning-guard` may require a task card, fact gate, or rebaseline. Honor that boundary; lifecycle recovery does not grant permission to bypass it.
+- `deliberate-project` may provide read-only finding IDs. Preserve `Open`, `Contested`, and `Coverage-limited` states instead of converting them into decisions.
+
+If an integration is unavailable, return the normal standalone recovery status (`FOUND`, `PARTIAL`, `NOT_FOUND`, `CONFLICTED`, or `BLOCKED_UNCERTAINTY`) with its bounded next action. Do not launch a replacement memory service or recursive recovery agent.
+
 ## Verify And Close
 
 Use the automatic finish route before handing off or declaring a long task complete. Include verification evidence and any remaining risk in the final checkpoint. A valid ledger proves only that recovery metadata is structurally complete; it does not prove the implementation is correct.

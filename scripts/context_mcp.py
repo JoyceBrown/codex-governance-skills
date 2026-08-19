@@ -34,6 +34,15 @@ class ContextAccessError(ValueError):
     """A bounded error that is safe to return to an MCP client."""
 
 
+def configure_utf8_stdio() -> None:
+    """Keep MCP JSON-RPC framing UTF-8 on Windows console hosts."""
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="strict", newline="\n")
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+
 def canonical_root(value: str | Path) -> Path:
     return Path(value).expanduser().resolve()
 
@@ -449,8 +458,24 @@ class ContextServer:
                 },
                 "recent_compaction": recent_compaction,
             },
-            "plan_navigation": context_state.plan_navigation_view(root),
-            "continuity": context_state.continuity_snapshot(root, ledger, manifest) if manifest and not errors else {},
+            "plan_navigation": (
+                context_state.plan_navigation_view(root)
+                if not consistency.get("blocking")
+                else {"configured": False, "valid": False, "errors": ["baseline drift blocks navigation export"]}
+            ),
+            "continuity": (
+                context_state.continuity_snapshot(root, ledger, manifest)
+                if manifest and not errors and not consistency.get("blocking")
+                else {
+                    "status": "BLOCKED_UNCERTAINTY" if consistency.get("blocking") else "NOT_FOUND",
+                    "blocking": bool(consistency.get("blocking")),
+                    "baseline_status": consistency.get("baseline_status", "UNKNOWN"),
+                    "changed_fields": consistency.get("baseline_changed", []),
+                    "next_action": "Inspect and checkpoint before exporting project content."
+                    if consistency.get("blocking")
+                    else "No verified ledger available.",
+                }
+            ),
         }
         return text_result(result, maximum)
 
@@ -474,8 +499,20 @@ class ContextServer:
                         "errors": errors or consistency.get("errors", []),
                         "warnings": consistency.get("warnings", []),
                     }
-                project["plan_navigation"] = context_state.plan_navigation_view(root)
-                project["continuity"] = context_state.continuity_snapshot(root, ledger, manifest) if manifest and not errors else {}
+                project["plan_navigation"] = (
+                    context_state.plan_navigation_view(root)
+                    if not consistency.get("blocking")
+                    else {"configured": False, "valid": False, "errors": ["baseline drift blocks navigation export"]}
+                )
+                project["continuity"] = (
+                    context_state.continuity_snapshot(root, ledger, manifest)
+                    if manifest and not errors and not consistency.get("blocking")
+                    else {
+                        "status": "BLOCKED_UNCERTAINTY" if consistency.get("blocking") else "NOT_FOUND",
+                        "blocking": bool(consistency.get("blocking")),
+                        "changed_fields": consistency.get("baseline_changed", []),
+                    }
+                )
                 projects.append(project)
             except (OSError, ValueError) as exc:
                 projects.append({"project_root": str(root), "valid": False, "errors": [str(exc)]})
@@ -671,6 +708,7 @@ class ContextServer:
 
 
 def serve(server: ContextServer) -> int:
+    configure_utf8_stdio()
     for raw in sys.stdin.buffer:
         if len(raw) > 1024 * 1024:
             continue
@@ -754,8 +792,17 @@ continuity_parent_task_id: none
 | Task ID | Status | Route coordinate | Outcome |
 | --- | --- | --- | --- |
 | TASK-01 | in_progress | R7:A3/B2 | Verify the route. |
-"""
+        """
         (root / "PLANS.md").write_text(valid_plan, encoding="utf-8")
+        context_state.checkpoint(
+            ledger,
+            "Rebaselined verified navigation plan.",
+            "Continue navigation checks.",
+            "self-test",
+            "",
+            "active",
+            expected_root=root,
+        )
         current_navigation = server.call_tool("get_current_context", {"sections": ["navigation"]})
         current_navigation_data = json.loads(current_navigation["content"][0]["text"])
         navigation_view = current_navigation_data["sections"]["plan_navigation"]
@@ -770,7 +817,7 @@ continuity_parent_task_id: none
         if (
             navigation_search.get("isError")
             or not navigation_search_data.get("results")
-            or navigation_search_data["results"][0].get("source") != "plan_navigation"
+            or not any(item.get("source") == "plan_navigation" for item in navigation_search_data["results"])
         ):
             raise RuntimeError("self-test failed: verified navigation search")
         navigation_health = json.loads(server.call_tool("get_context_health", {})["content"][0]["text"])
@@ -779,28 +826,21 @@ continuity_parent_task_id: none
         navigation_projects = json.loads(server.call_tool("list_context_projects", {})["content"][0]["text"])
         if navigation_projects["projects"][0]["plan_navigation"].get("current_route_coordinate") != "R7:A3/B2":
             raise RuntimeError("self-test failed: project navigation summary")
-
-        (root / "PLANS.md").write_text(valid_plan.replace("route_id: R7", "route_id: R8"), encoding="utf-8")
-        invalid_navigation = server.call_tool("get_current_context", {"sections": ["navigation"]})
-        invalid_navigation_data = json.loads(invalid_navigation["content"][0]["text"])
-        invalid_view = invalid_navigation_data["sections"]["plan_navigation"]
-        if (
-            invalid_navigation.get("isError")
-            or invalid_view.get("valid")
-            or not invalid_view.get("errors")
-            or "current_route_coordinate" in invalid_view
-        ):
-            raise RuntimeError("self-test failed: invalid navigation was exported as trusted")
-        invalid_search = json.loads(
-            server.call_tool("search_context", {"query": "R7:A3/B2"})["content"][0]["text"]
-        )
-        if invalid_search.get("results"):
-            raise RuntimeError("self-test failed: invalid navigation remained searchable")
         resources = server.resources()
         if len(resources) != 2:
             raise RuntimeError("self-test failed: resources were not exposed")
         if not server.read_resource(resources[0]["uri"]).get("contents"):
             raise RuntimeError("self-test failed: resource read")
+
+        (root / "PLANS.md").write_text(valid_plan.replace("route_id: R7", "route_id: R8"), encoding="utf-8")
+        invalid_navigation = server.call_tool("get_current_context", {"sections": ["navigation"]})
+        if not invalid_navigation.get("isError") or "uncheckpointed state" not in str(invalid_navigation):
+            raise RuntimeError("self-test failed: stale navigation was exported as trusted")
+        invalid_search = json.loads(
+            server.call_tool("search_context", {"query": "R7:A3/B2"})["content"][0]["text"]
+        )
+        if not invalid_search.get("error"):
+            raise RuntimeError("self-test failed: stale navigation remained searchable")
         outside = Path(temporary).parent.resolve()
         denied = server.call_tool("get_current_context", {"project_root": str(outside)})
         if not denied.get("isError"):
@@ -821,6 +861,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    configure_utf8_stdio()
     args = build_parser().parse_args()
     if args.self_test:
         self_test()
