@@ -60,7 +60,7 @@ function Move-Item {{
     if (-not (Get-Variable -Scope Script -Name moveCalls -ErrorAction SilentlyContinue)) {{ $script:moveCalls = 0 }}
     $script:moveCalls++
     if ($script:moveCalls -eq 2) {{ throw 'injected commit failure' }}
-    Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+    Microsoft.PowerShell.Management\\Move-Item -LiteralPath $LiteralPath -Destination $Destination
 }}
 & {self.ps_quote(INSTALLER)} -TargetSkillsRoot {self.ps_quote(target)} -Names @('intent-alignment','diagnose')
 """
