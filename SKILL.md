@@ -139,6 +139,18 @@ When a result is unchanged:
 
 After interruption, compaction, or handoff, restore from the durable task card described in [references/task-card-schema.md](references/task-card-schema.md). Validate the card before resuming. Do not trust a stale summary, an old plan, a process that merely remains running, or another agent's success report without independent verification.
 
+## Composition Contract
+
+This guard is independently usable and remains the gate for writes, external state, and consequential completion claims. Optional integrations exchange only a bounded envelope: `request_id`, `risk`, `target`, `source_of_truth`, `evidence_refs`, `authorization`, `rollback`, and `next_action`.
+
+- `intent-alignment` may clarify the real user goal and visible success state. It cannot authorize a mutation or replace the current user instruction.
+- `diagnose` and `architecture-health` may provide competing hypotheses and boundary findings. Require a discriminating check before treating either as causal evidence.
+- `tdd-loop` may provide test evidence. A passing test is one input to user-path verification, not proof of completion by itself.
+- `bootstrap-codex-project` and `durable-context` may identify canonical files, requirements revisions, and drift. Honor their source ownership and rebaseline signals; do not repair a conflict by editing the guard card alone.
+- `deliberate-project` is a read-only, explicit-only inquiry. Its findings can strengthen a fact gate, but its role count never authorizes action.
+
+When an optional integration is missing, keep the guard's local task-card, fact-gate, goal-gate, identity, rollback, and verification requirements. Missing evidence remains an unknown or block; it is never silently downgraded to a low-risk action.
+
 ## Experience Learning
 
 Record only an abstract, redacted event when a task produces a non-obvious, verified lesson. Store observations separately from reusable rules. Use the lifecycle and conflict rules in [references/memory-policy.md](references/memory-policy.md).
