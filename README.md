@@ -12,7 +12,7 @@
 - 通过 requirements revision、内容哈希和 checkpoint 防止旧需求覆盖新需求。
 - 对受限源码/配置集合保存聚合项目指纹；源码、PLANS 或账本投影漂移会关闭写入和跨工作台读取门，直到检查并重新 checkpoint。
 - 在压缩前后校验 task ID、checkpoint、revision 和 requirements hash。
-- 对项目写入执行一致性守卫；账本无效或需求版本未推进时拒绝写入。
+- 对项目写入执行一致性守卫；仅在账本无效或当前项目基线漂移时拒绝写入，词法上的潜在需求变化只观察、不设门禁。
 - 通过 Obsidian 做可验证的只读投影，通过 Context MCP 提供跨工作台只读读取。
 - Hook 日志只记录脱敏的事件、结果、延迟和状态元数据，不记录原始 prompt、工具参数、转录或凭据。
 
@@ -63,9 +63,9 @@ Copy-Item -Recurse -Force .\* $skillRoot
 - `PostCompact`
 - `Stop`
 
-Hook 是机械守卫，不负责猜测语义需求。需求变化仍由技能生命周期记录到当前 ledger。
+Hook 是机械守卫，不负责猜测语义需求。`UserPromptSubmit` 的词法命中只写入脱敏 telemetry，不阻断项目写入或普通问答；确认后的需求变化仍由技能生命周期记录到当前 ledger。
 
-当账本投影在中断后不一致时，自动恢复只允许进入一次受信任的 `repair` 生命周期。它只从完整、可验证的 `changes.jsonl` 重建唯一可证明的尾部 `history.jsonl` 或生成的 `handoff.md`；项目文件漂移、历史歧义或事务状态异常会返回 `RECOVERY_REQUIRED`，不会猜测覆盖。相同恢复失败达到上限后，`Stop` Hook 打开熔断并安全结束当前回合，不再无限要求继续。只有 repair 成功且 `verify` 通过后，熔断状态才会清除。
+账本 checkpoint、revision 或生成投影不一致时，`Stop` 只记录脱敏 advisory telemetry，不产生可见 Hook 输出，也不请求 continuation，因此普通问答可以正常结束。未完成事务等主动恢复条件仍只允许进入一次受信任的 `repair` 生命周期；相同恢复失败达到上限后打开熔断并安全结束当前回合。项目文件漂移和账本损坏继续由写入型 `PreToolUse` 门禁保护，不会猜测覆盖。
 
 ## Context MCP
 

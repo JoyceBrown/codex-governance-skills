@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -376,18 +377,7 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertEqual([], context_state.verify(self.ledger, expected_root=self.root))
 
     def test_stop_opens_a_circuit_after_repeated_identical_recovery_failure(self) -> None:
-        source = self.root / "source.py"
-        source.write_text("baseline\n", encoding="utf-8")
-        context_state.checkpoint(
-            self.ledger,
-            "recorded baseline",
-            "continue after verification",
-            "test evidence",
-            "",
-            "active",
-            expected_root=self.root,
-        )
-        source.write_text("drifted\n", encoding="utf-8")
+        (self.ledger / ".transaction.json").write_text("{}\n", encoding="utf-8")
         payload = {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": "same-session"}
         first = codex_hook.process(payload)
         second = codex_hook.process(payload)
@@ -399,9 +389,10 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertNotIn("decision", second.payload)
         self.assertEqual("recovery_circuit_open", third.reason)
 
+        (self.ledger / ".transaction.json").unlink()
         context_state.checkpoint(
             self.ledger,
-            "rebaselined after inspection",
+            "transaction recovery verified",
             "continue",
             "test evidence",
             "",
@@ -410,6 +401,70 @@ class ContinuityContractTests(unittest.TestCase):
         )
         clean = codex_hook.process(payload)
         self.assertEqual("active_clean", clean.reason)
+
+    def test_requirement_hint_is_observed_without_a_write_gate(self) -> None:
+        session = "hint-session"
+        turn = "hint-turn"
+        prompt = codex_hook.process(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": str(self.root),
+                "session_id": session,
+                "turn_id": turn,
+                "prompt": "Change the acceptance standard after reviewing the current evidence.",
+            }
+        )
+        self.assertEqual("allow", prompt.outcome)
+        self.assertEqual("requirement_observed", prompt.reason)
+        self.assertEqual({}, prompt.payload)
+
+        write = codex_hook.process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(self.root),
+                "session_id": session,
+                "turn_id": turn,
+                "tool_name": "apply_patch",
+                "tool_input": {"patch": "*** Begin Patch\n*** End Patch"},
+            }
+        )
+        self.assertEqual("allow", write.outcome)
+        self.assertEqual("ledger_valid", write.reason)
+
+        stop = codex_hook.process(
+            {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": session, "turn_id": turn}
+        )
+        self.assertEqual("active_clean", stop.reason)
+        self.assertNotIn("decision", stop.payload)
+
+    def test_stop_downgrades_ledger_bookkeeping_to_one_advisory(self) -> None:
+        consistency = {
+            "errors": ["complete ledger has unfinished Acceptance Standard items"],
+            "warnings": ["requirements revision mismatch: change log=2, manifest=0"],
+            "blocking_warnings": [],
+        }
+        payload = {"hook_event_name": "Stop", "cwd": str(self.root), "session_id": "advisory-session"}
+        with mock.patch.object(codex_hook.context_state, "reconcile", return_value=consistency):
+            result = codex_hook.process(payload)
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("ledger_advisory", result.reason)
+        self.assertEqual({}, result.payload)
+
+    def test_invalid_ledger_prompt_hint_is_telemetry_only(self) -> None:
+        requirements = self.ledger / "requirements.md"
+        requirements.write_text(requirements.read_text(encoding="utf-8") + "\ninvalid change\n", encoding="utf-8")
+        result = codex_hook.process(
+            {
+                "hook_event_name": "UserPromptSubmit",
+                "cwd": str(self.root),
+                "session_id": "invalid-prompt-session",
+                "turn_id": "invalid-prompt-turn",
+                "prompt": "继续",
+            }
+        )
+        self.assertEqual("warning", result.outcome)
+        self.assertEqual("invalid_ledger_observed", result.reason)
+        self.assertEqual({}, result.payload)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ Interrupted ledger writes are recovered transactionally. For projection drift, u
 
 Repair fails closed with `RECOVERY_REQUIRED` when requirements, authoritative ledger files, transaction state, or checkpoint history is ambiguous. A uniquely proven generated projection may be repaired while the project baseline has changed, but the repair preserves that drift and returns `rebaseline_required`; only a later explicit checkpoint after current-file inspection may reopen the write gate. Repair never rewrites project source or guesses missing historical detail.
 
-The Stop Hook records a bounded, privacy-safe failure fingerprint. The same fingerprint is allowed one continuation attempt; repeated identical failures open a circuit and return a warning without a continuation decision. A successful verified recovery or clean checkpoint clears the failure state.
+The Stop Hook treats checkpoint, revision, generated-projection, and completion-status mismatches as telemetry-only bookkeeping advisories with no visible Hook output, and never requests continuation for them. An active recovery condition records a bounded, privacy-safe failure fingerprint and is allowed one continuation attempt; repeated identical failures open a circuit and return a warning without a continuation decision. A successful verified recovery or clean checkpoint clears the failure state. Lexical requirement hints are observations only and never become Stop reasons.
 
 ## Bounded Tiers
 

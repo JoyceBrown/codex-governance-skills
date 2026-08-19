@@ -316,6 +316,12 @@ def recovery_fingerprint(manifest: dict[str, Any], reasons: list[str]) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")).hexdigest()[:24]
 
 
+def is_stop_blocking_reason(reason: str) -> bool:
+    """Keep Stop strict for active data-risk states, not ledger bookkeeping noise."""
+    normalized = reason.casefold()
+    return "incomplete ledger transaction" in normalized
+
+
 def record_recovery_failure(ledger: Path, fingerprint: str, payload: dict[str, Any]) -> int:
     count = 0
 
@@ -369,17 +375,16 @@ def guard_key(payload: dict[str, Any]) -> str:
     return f"{session}:{turn or 'session'}"
 
 
-def set_turn_guard(ledger: Path, payload: dict[str, Any], snapshot: dict[str, Any], reason: str) -> None:
+def clear_turn_guard(ledger: Path, payload: dict[str, Any]) -> None:
     key = guard_key(payload)
 
     def mutate(state: dict[str, Any]) -> None:
-        state["turn_guards"][key] = {
-            **snapshot,
-            "reason": reason,
-            "created_epoch": time.time(),
-        }
+        state.get("turn_guards", {}).pop(key, None)
 
-    update_state(ledger, mutate)
+    try:
+        update_state(ledger, mutate)
+    except (OSError, TimeoutError, ValueError):
+        pass
 
 
 def pending_turn_guard(ledger: Path, payload: dict[str, Any], snapshot: dict[str, Any]) -> dict[str, Any] | None:
@@ -567,21 +572,11 @@ def handle_user_prompt(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
         return HookResult({}, "allow", "no_requirement_hint", (root, ledger))
     errors = context_state.verify(ledger, expected_root=root)
     if errors:
-        message = "The durable-context ledger is invalid. Reconcile it before changing project state."
-        return HookResult(
-            additional_context("UserPromptSubmit", message, "Durable-context ledger needs repair"),
-            "warning",
-            "invalid_ledger",
-            (root, ledger),
-        )
-    snapshot = ledger_snapshot(root, ledger)
-    set_turn_guard(ledger, payload, snapshot, "requirement_hint")
-    message = (
-        "This prompt may change the objective, scope, route, acceptance standard, or an implementation detail. "
-        "Compare it with the current requirements and record one requirement revision before any project write. "
-        "Do not ask the user to manage the ledger."
-    )
-    return HookResult(additional_context("UserPromptSubmit", message), "guarded", "requirement_hint", (root, ledger))
+        return HookResult({}, "warning", "invalid_ledger_observed", (root, ledger))
+    # A lexical hint is an observation, not proof that the requirements changed.
+    # Keep the signal in bounded telemetry and let the active task decide whether
+    # a confirmed revision is needed after the current work continues.
+    return HookResult({}, "allow", "requirement_observed", (root, ledger))
 
 
 def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult:
@@ -608,12 +603,8 @@ def handle_pre_tool(payload: dict[str, Any], root: Path, ledger: Path) -> HookRe
     snapshot = ledger_snapshot(root, ledger)
     guard = pending_turn_guard(ledger, payload, snapshot)
     if guard is not None:
-        reason = (
-            "Durable-context rejected this write because the current prompt may change project requirements, "
-            "but the ledger revision/hash has not changed yet. Record the requirement change through the "
-            "automatic lifecycle, then retry the write."
-        )
-        return HookResult(deny_tool(reason), "deny", "requirement_revision_pending", (root, ledger))
+        clear_turn_guard(ledger, payload)
+        return HookResult({}, "allow", "requirement_advisory", (root, ledger))
     return HookResult({}, "allow", "ledger_valid", (root, ledger))
 
 
@@ -630,13 +621,9 @@ def handle_pre_compact(payload: dict[str, Any], root: Path, ledger: Path) -> Hoo
     snapshot = ledger_snapshot(root, ledger)
     guard = pending_turn_guard(ledger, payload, snapshot)
     if guard is not None:
-        reason = "Record the pending requirement revision before compacting this task."
-        return HookResult(
-            {"continue": False, "stopReason": reason, "systemMessage": "Compaction paused for durable context"},
-            "deny",
-            "requirement_revision_pending",
-            (root, ledger),
-        )
+        clear_turn_guard(ledger, payload)
+        store_compaction(ledger, payload, snapshot)
+        return HookResult({}, "allow", "requirement_advisory", (root, ledger))
     store_compaction(ledger, payload, snapshot)
     return HookResult({}, "allow", "pre_compact_snapshot_saved", (root, ledger))
 
@@ -680,19 +667,16 @@ def handle_stop(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult
         consistency = context_state.reconcile(ledger, expected_root=root)
         reasons.extend(str(item) for item in consistency.get("errors", []))
         reasons.extend(str(item) for item in consistency.get("warnings", []))
-        try:
-            snapshot = ledger_snapshot(root, ledger)
-            if pending_turn_guard(ledger, payload, snapshot) is not None:
-                reasons.append("the current prompt may contain an unrecorded requirement change")
-        except (OSError, ValueError):
-            pass
-        if manifest.get("status") == "complete" and not reasons:
+        blocking_reasons = [reason for reason in reasons if is_stop_blocking_reason(reason)]
+        advisory_reasons = [reason for reason in reasons if reason not in blocking_reasons]
+        if not blocking_reasons:
             clear_recovery_failures(ledger)
-            return HookResult({}, "allow", "complete_clean", (root, ledger))
-        if not reasons:
-            clear_recovery_failures(ledger)
+            if advisory_reasons:
+                return HookResult({}, "warning", "ledger_advisory", (root, ledger))
+            if manifest.get("status") == "complete":
+                return HookResult({}, "allow", "complete_clean", (root, ledger))
             return HookResult({}, "allow", "active_clean", (root, ledger))
-        fingerprint = recovery_fingerprint(manifest, reasons)
+        fingerprint = recovery_fingerprint(manifest, blocking_reasons)
         attempt = record_recovery_failure(ledger, fingerprint, payload)
         if attempt >= RECOVERY_FAILURE_LIMIT:
             message = (
@@ -708,7 +692,7 @@ def handle_stop(payload: dict[str, Any], root: Path, ledger: Path) -> HookResult
             )
         reason = (
             "Before stopping, preserve the durable task state: "
-            + "; ".join(dict.fromkeys(reasons))
+            + "; ".join(dict.fromkeys(blocking_reasons))
             + ". Run the trusted repair/recovery lifecycle, then continue once."
         )
         return HookResult({"decision": "block", "reason": reason[:2000]}, "continue", "dirty_ledger", (root, ledger))
@@ -838,49 +822,8 @@ def self_test() -> None:
                 "prompt": prompt_text,
             }
         )
-        if prompt.outcome != "guarded":
-            raise RuntimeError("self-test failed: requirement-bearing prompt was not guarded")
-        denied = process(
-            {
-                "hook_event_name": "PreToolUse",
-                "cwd": str(root),
-                "session_id": session,
-                "turn_id": turn,
-                "tool_name": "apply_patch",
-                "tool_input": {"command": "private-tool-input"},
-            }
-        )
-        if denied.outcome != "deny" or denied.reason != "requirement_revision_pending":
-            raise RuntimeError("self-test failed: unrecorded requirement write was not denied")
-        external_denied = process(
-            {
-                "hook_event_name": "PreToolUse",
-                "cwd": str(root),
-                "session_id": session,
-                "turn_id": turn,
-                "tool_name": "mcp__nuphus__browser_click",
-                "tool_input": {"selector": "private-selector"},
-            }
-        )
-        if external_denied.outcome != "deny":
-            raise RuntimeError("self-test failed: guarded external-state write was not denied")
-
-        context_state.automatic(
-            root,
-            ledger,
-            "change",
-            "",
-            "Hook detail recorded",
-            "",
-            "",
-            "",
-            "active",
-            3000,
-            "detail",
-            "self-test",
-            "guard revision advanced",
-            "",
-        )
+        if prompt.outcome != "allow" or prompt.reason != "requirement_observed" or prompt.payload:
+            raise RuntimeError("self-test failed: requirement-bearing prompt was not observed silently")
         allowed = process(
             {
                 "hook_event_name": "PreToolUse",
@@ -892,7 +835,19 @@ def self_test() -> None:
             }
         )
         if allowed.outcome != "allow":
-            raise RuntimeError("self-test failed: recorded requirement write stayed blocked")
+            raise RuntimeError("self-test failed: observed requirement hint blocked a project write")
+        external_allowed = process(
+            {
+                "hook_event_name": "PreToolUse",
+                "cwd": str(root),
+                "session_id": session,
+                "turn_id": turn,
+                "tool_name": "mcp__nuphus__browser_click",
+                "tool_input": {"selector": "private-selector"},
+            }
+        )
+        if external_allowed.outcome != "allow":
+            raise RuntimeError("self-test failed: observed requirement hint blocked an external write")
         read_only = process(
             {
                 "hook_event_name": "PreToolUse",
