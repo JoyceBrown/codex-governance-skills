@@ -231,6 +231,10 @@ Do not choose an option merely because the inquiry produced several judgments. I
 
 Adjudication uses binding constraints, engineering feasibility, authorized objectives, explicit tradeoffs, uncertainty, reversibility, and residual risk. It never uses role count to manufacture a decision. Unknown preference weights or authority remain user-dependent.
 
+## Composition Contract
+
+Read-only and explicit-only; integrations pass bounded metadata, never authority.
+
 ## Maintain Experience Without Rewriting the Core
 
 Separate current-case notes, project-specific prior findings, a governed cross-project experience catalog, and this core procedure. Read `references/experience-governance.md` before any catalog operation. Before method routing, only the primary may load experience read-only. After the inquiry report is stable, every activated inquiry must evaluate reusable-lesson eligibility. When the current request does not prohibit persistence and catalog writes are permitted, record every qualifying observation and run `finalize-case` exactly once; it derives either `lesson-recorded` or `no-eligible-lesson` and closes that case. Do not invent a lesson to force a write, and do not send the final response until the receipt is recorded or a transient evaluation and exact persistence failure are disclosed. Role agents never operate the catalog.
