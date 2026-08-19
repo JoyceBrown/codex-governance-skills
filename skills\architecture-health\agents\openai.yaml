@@ -1,0 +1,5 @@
+interface:
+  display_name: "Architecture Health"
+  short_description: "检查边界、依赖、演进和回滚健康度"
+  default_prompt: "按当前快照检查模块边界、接口、状态、成本和回滚条件。"
+

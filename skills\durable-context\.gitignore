@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.agent-context/
+.agent-context-archive/
+hook-events.jsonl
+outputs/
+.env
+*.log
+

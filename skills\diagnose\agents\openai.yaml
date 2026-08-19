@@ -1,0 +1,5 @@
+interface:
+  display_name: "Diagnose"
+  short_description: "用竞争根因和区分性检查定位问题"
+  default_prompt: "先复现并列出竞争根因，再执行最小区分性检查。"
+

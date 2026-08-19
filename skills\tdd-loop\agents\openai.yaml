@@ -1,0 +1,5 @@
+interface:
+  display_name: "TDD Loop"
+  short_description: "用测试、实现、回归和用户路径完成小步交付"
+  default_prompt: "建立最小失败检查，完成小步实现和回归，再验证真实用户路径。"
+

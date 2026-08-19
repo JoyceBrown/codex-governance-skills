@@ -1,0 +1,39 @@
+{
+  "schema": "codex-governance-skills-source-manifest-v1",
+  "generated_at": "2026-08-19",
+  "sources": [
+    {
+      "skill": "bootstrap-codex-project",
+      "repository": "https://github.com/JoyceBrown/bootstrap-codex-project",
+      "commit": "3ebae7c512de846435fc0632d84e898638e6fd2c",
+      "changes": ["added bounded composition contract"]
+    },
+    {
+      "skill": "durable-context",
+      "repository": "https://github.com/JoyceBrown/durable-context",
+      "commit": "87ac40f29bfc29676aac667e163521226afec37a",
+      "changes": ["added bounded composition contract"]
+    },
+    {
+      "skill": "human-centered-reasoning-guard",
+      "repository": "https://github.com/JoyceBrown/human-centered-reasoning-guard",
+      "commit": "4cc16ba8eeedd4cf8583344b63108354d81d7877",
+      "changes": ["added bounded composition contract"]
+    },
+    {
+      "skill": "deliberate-project",
+      "repository": "https://github.com/JoyceBrown/deliberate-project",
+      "commit": "a49e65cf3544cd9fefb4370959394f3f905ba621",
+      "source_subdirectory": "deliberate-project",
+      "changes": ["added minimal read-only composition contract"]
+    }
+  ],
+  "excluded": [
+    "project-local .agent-context ledgers",
+    "Hook telemetry and runtime logs",
+    "credentials, tokens, cookies, and private prompts",
+    "conversation-history.md",
+    "local .git metadata and caches",
+    "user project source code"
+  ]
+}

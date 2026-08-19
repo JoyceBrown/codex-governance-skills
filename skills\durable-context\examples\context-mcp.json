@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "durable_context": {
+      "command": "py",
+      "args": [
+        "-3",
+        "%USERPROFILE%/.codex/skills/durable-context/scripts/context_mcp.py",
+        "--allow-root",
+        "C:/path/to/project"
+      ]
+    }
+  }
+}

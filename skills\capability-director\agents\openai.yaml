@@ -1,0 +1,5 @@
+interface:
+  display_name: "Capability Director"
+  short_description: "有限发现并比较可复用能力"
+  default_prompt: "先检查已有能力，再给出最多三个可追踪候选，不自动安装或启用。"
+

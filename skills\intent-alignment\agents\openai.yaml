@@ -1,0 +1,5 @@
+interface:
+  display_name: "Intent Alignment"
+  short_description: "压缩目标、范围、成功状态和未知"
+  default_prompt: "先把用户目标、可见成功、范围、非目标和未知压缩成一张对齐卡。"
+

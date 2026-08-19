@@ -1,0 +1,4 @@
+interface:
+  display_name: "Human-Centered Reasoning Guard"
+  short_description: "Reframe risky work around user outcomes, evidence, and recovery"
+  default_prompt: "Apply the human-centered reasoning guard before taking action on this task."
