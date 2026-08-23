@@ -97,6 +97,23 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             ).is_file()
         )
 
+    def test_human_guard_active_user_perspective_contract(self):
+        skill = (SKILLS / "human-centered-reasoning-guard" / "SKILL.md").read_text(encoding="utf-8")
+        reference = (
+            SKILLS
+            / "human-centered-reasoning-guard"
+            / "references"
+            / "active-user-reconstruction.md"
+        )
+        self.assertTrue(reference.is_file())
+        self.assertIn("Active User-Perspective Mode", skill)
+        self.assertIn("Pause code edits", skill)
+        self.assertIn("CONTINUE", skill)
+        self.assertIn("intent-alignment", skill)
+        protocol = reference.read_text(encoding="utf-8")
+        for marker in ("Why now", "User job", "Observable success", "ASSUMPTION", "NO CHANGE REQUIRED", "Output Contract"):
+            self.assertIn(marker, protocol)
+
     def test_git_paths_and_published_text_blobs_are_portable(self):
         paths = subprocess.run(
             ["git", "ls-files", "-z"],

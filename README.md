@@ -40,6 +40,8 @@
 
 `human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context` 和 `deliberate-project` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
 
+当你主动要求“从用户角度重新思考这个需求”时，`human-centered-reasoning-guard` 会进入主动用户视角模式：先暂停技术实现，重建“问题触发 -> 用户任务 -> 期望体验 -> 可见成功 -> 失败恢复”的路径，区分事实、假设和未知，再给出 `CONTINUE / REFRAME / ASK / STOP`。默认停在只读理解结果，不会因为你提到一个功能名就直接改代码。确认理解后再说“继续实现”，才进入正常的授权、事实门和验证流程。
+
 `capability-director` 只在当前能力明显不匹配时建议“使用、借鉴、Fork、安装或拒绝”。它先检查项目已有能力和 Codex 原生能力，最多给出 3 个候选，并记录问题、范围、来源和结论；它不会自动下载、修改配置、授予权限或启动插件运行时。
 
 ## 组合信封
@@ -88,6 +90,10 @@ Set-Location codex-governance-skills
 
 ```text
 帮我把这个需求压缩成可验收的目标，指出范围和未知，不要修改代码。
+```
+
+```text
+调用 Human Guard，从用户最终结果重新理解这个需求，先不要改代码。
 ```
 
 ```text

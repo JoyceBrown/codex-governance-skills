@@ -1,6 +1,6 @@
 ---
 name: human-centered-reasoning-guard
-description: Use when a task involves software changes, debugging, UI/UX, performance, caching, synchronization, networking, permissions, deployment, deletion, migration, multiple agents or providers, repeated failure, user reports that a fix did not change the result, or work resumed after interruption. Reframe the work around the user's real-world outcome, verify root causes and boundaries, protect authorization, and capture only validated reusable lessons.
+description: Use when a task involves software changes, debugging, UI/UX, performance, caching, synchronization, networking, permissions, deployment, deletion, migration, multiple agents or providers, repeated failure, user reports that a fix did not change the result, work resumed after interruption, or the user explicitly asks to understand a requirement from the user's perspective before implementation. Reframe the work around the user's real-world outcome, verify root causes and boundaries, protect authorization, and capture only validated reusable lessons.
 ---
 
 # Human-Centered Reasoning Guard
@@ -24,6 +24,23 @@ Do not run the full tier for a simple explanation, a single read-only command, o
 For a deterministic recommendation, run [scripts/classify-task-tier.ps1](scripts/classify-task-tier.ps1) with the bounded facts in [references/task-tiering.md](references/task-tiering.md). Treat `reset` as a direction change, not a reason to stop the workbench.
 
 At the start of a non-trivial turn, use [scripts/invoke-guard-workflow.ps1](scripts/invoke-guard-workflow.ps1) to route the tier, task-card preflight, target identity, drift state, and next bounded action. It is a decision layer: `mutation_allowed` is false until the required evidence is present, and reset/drift blocks redirect to investigation rather than killing the workbench.
+
+## Active User-Perspective Mode
+
+Enter this mode when the user explicitly asks to “从用户角度重新思考”、重新理解需求、判断真正想解决的问题，或 asks the guard to review a new requirement before implementation. This is different from the passive guard: the passive guard checks whether an ongoing action has drifted; active mode reconstructs the user's problem before accepting the proposed solution.
+
+When active mode is entered:
+
+1. Pause code edits, technical design, installation, and other mutations. The default endpoint is a read-only understanding result, not an implementation plan.
+2. Read only the bounded evidence needed for the request: the current user message, the latest user corrections, the active plan or acceptance criteria, and the directly relevant user-visible behavior. Use durable-context or project records only when continuity is material; do not scan the full conversation or project by default.
+3. Separate the user's stated request from the solution they named. Reconstruct the path `problem trigger -> user action -> expected system response -> usable result -> recovery when it fails`.
+4. Infer the likely underlying job and desired experience, but label every inference as an assumption. Preserve up to two plausible interpretations when the evidence does not decide between them.
+5. Identify facts, assumptions, unknowns, non-negotiable invariants, user costs, and a small set of observable acceptance checks. Do not impersonate the user or present a plausible story as a fact.
+6. Decide one of `CONTINUE`, `REFRAME`, `ASK`, or `STOP`. Use `ASK` only when the ambiguity would change scope, architecture, authorization, privacy, or the visible result; otherwise choose a reversible assumption and mark it.
+
+Use [references/active-user-reconstruction.md](references/active-user-reconstruction.md) for the detailed protocol and concise output contract. Do not expose hidden chain-of-thought: report the conclusion, evidence, assumptions, uncertainty, and next action.
+
+Active mode does not authorize implementation. If the user later explicitly asks to proceed, return to the ordinary fact gate, goal-integrity gate, authorization, and verification flow. `intent-alignment` may consume the confirmed result to create a scope card; it does not replace this user-journey reconstruction.
 
 ## Preflight Contract
 
@@ -74,6 +91,8 @@ Ask internally, in this order:
 3. What cost is the current behavior imposing (waiting, refreshes, restarts, confusion, data loss, technical investigation)?
 4. Which layer owns the behavior: source data, execution state, transport, cache, presentation model, UI interaction, permissions, or environment?
 5. What would a from-scratch design do differently?
+
+For an active user-perspective request, answer these questions before considering HOW: why the user raised the request now, what job they are trying to complete, what experience they expect, what they would accept as “solved,” and which part of the named solution may only be a proxy. Keep this reconstruction separate from the later causal/root-cause hypotheses used for a technical fix.
 
 List a minimum of two competing explanations. For each, state a prediction and the cheapest observation that could disprove it. Do not convert a guess into a fix.
 
@@ -144,6 +163,7 @@ After interruption, compaction, or handoff, restore from the durable task card d
 This guard is independently usable and remains the gate for writes, external state, and consequential completion claims. Optional integrations exchange only a bounded envelope: `request_id`, `risk`, `target`, `source_of_truth`, `evidence_refs`, `authorization`, `rollback`, and `next_action`.
 
 - `intent-alignment` may clarify the real user goal and visible success state. It cannot authorize a mutation or replace the current user instruction.
+- In active mode, this guard reconstructs the user journey and tests whether the named request is a proxy for a different outcome. `intent-alignment` then compresses the confirmed outcome into scope, constraints, and unknowns; neither skill may silently turn an assumption into authorization.
 - `diagnose` and `architecture-health` may provide competing hypotheses and boundary findings. Require a discriminating check before treating either as causal evidence.
 - `tdd-loop` may provide test evidence. A passing test is one input to user-path verification, not proof of completion by itself.
 - `bootstrap-codex-project` and `durable-context` may identify canonical files, requirements revisions, and drift. Honor their source ownership and rebaseline signals; do not repair a conflict by editing the guard card alone.
