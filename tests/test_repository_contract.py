@@ -17,6 +17,7 @@ EXPECTED = {
     "tdd-loop",
     "architecture-health",
     "capability-director",
+    "execution-reliability",
 }
 COLLECTION_REPOSITORY = "https://github.com/JoyceBrown/codex-governance-skills"
 MATURE = {
@@ -61,8 +62,11 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         )
         self.assertEqual(manifest["authority"]["repository"], COLLECTION_REPOSITORY)
         records = {record["skill"]: record for record in manifest["skills"]}
-        self.assertEqual(set(records), MATURE)
-        for name, record in records.items():
+        legacy_records = {name: record for name, record in records.items() if "legacy_import" in record}
+        self.assertEqual(set(legacy_records), MATURE)
+        self.assertIn("execution-reliability", records)
+        self.assertEqual(records["execution-reliability"].get("origin"), "collection-native")
+        for name, record in legacy_records.items():
             self.assertEqual(record["authority_repository"], COLLECTION_REPOSITORY)
             self.assertEqual(record["source_path"], f"skills/{name}")
             self.assertRegex(record["legacy_import"]["commit"], r"^[0-9a-f]{40}$")
@@ -162,6 +166,27 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertIn("最多比较 3 个候选", skill)
         self.assertIn("不得自动下载代码", skill)
         self.assertIn("Capability Receipt", skill)
+
+    def test_execution_reliability_is_bounded_and_non_governing(self):
+        skill = (SKILLS / "execution-reliability" / "SKILL.md").read_text(encoding="utf-8")
+        for marker in (
+            "Composition Contract",
+            "不写 `.agent-context`",
+            "不自动调用“三堂会审”",
+            "同一目标、同一状态、同一动作最多自动重试一次",
+            "review_candidate",
+        ):
+            self.assertIn(marker, skill)
+        self.assertIn("不注册全局 Hook", skill)
+        self.assertTrue((SKILLS / "execution-reliability" / "scripts" / "preflight.py").is_file())
+        self.assertTrue((SKILLS / "execution-reliability" / "scripts" / "verify-artifact.py").is_file())
+        self.assertTrue((SKILLS / "execution-reliability" / "scripts" / "retry-guard.py").is_file())
+        self.assertTrue((SKILLS / "execution-reliability" / "scripts" / "write-receipt.py").is_file())
+
+    def test_execution_reliability_has_no_second_ledger_or_auto_adjudication(self):
+        skill = (SKILLS / "execution-reliability" / "SKILL.md").read_text(encoding="utf-8")
+        for marker in ("SQLite", "常驻 Broker", "自动触发它"):
+            self.assertNotIn(marker, skill)
 
 
 if __name__ == "__main__":

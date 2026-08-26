@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-四个治理 Skill 负责不同事实所有权：Bootstrap 管项目结构，Durable 管跨会话状态，Guard 管行动门禁，Deliberate 管显式只读审议。五个原子 Skill 只提供局部工作能力，不能成为新的计划、账本或权限中心。
+四个治理 Skill 负责不同事实所有权：Bootstrap 管项目结构，Durable 管跨会话状态，Guard 管行动门禁，Deliberate 管显式只读审议。六个原子 Skill 只提供局部工作能力，不能成为新的计划、账本或权限中心。
 
 ## 统一字段
 
@@ -16,6 +16,7 @@
 - Guard 的阻断不可被其他 Skill 覆盖；缺少授权、回滚或基线时停止在门禁。
 - Deliberate 的发现保留不确定性，不自动变成决策。
 - 原子 Skill 缺席时回退到主代理的普通能力，记录真实缺口，不递归启动代理或服务。
+- `execution-reliability` 只负责执行证据和一次性重试判断；它不调用 `deliberate-project`，不修改治理文件，不写 `.agent-context`。它的 `review_candidate` 只是供显式审议入口参考的信号。
 
 ## 成本预算
 

@@ -6,7 +6,8 @@ $testRoots = @(
     (Join-Path $root 'tests'),
     (Join-Path $root 'skills\bootstrap-codex-project\tests'),
     (Join-Path $root 'skills\deliberate-project\tests'),
-    (Join-Path $root 'skills\durable-context\tests')
+    (Join-Path $root 'skills\durable-context\tests'),
+    (Join-Path $root 'skills\execution-reliability\tests')
 )
 foreach ($testRoot in $testRoots) {
     $testProject = Split-Path -Parent $testRoot

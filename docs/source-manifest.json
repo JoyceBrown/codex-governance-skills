@@ -1,6 +1,6 @@
 {
   "schema": "codex-governance-skills-source-manifest-v3",
-  "generated_at": "2026-08-20",
+  "generated_at": "2026-08-26",
   "authority": {
     "repository": "https://github.com/JoyceBrown/codex-governance-skills",
     "branch": "main",
@@ -59,6 +59,16 @@
       "collection_changes": [
         "bounded composition contract",
         "repository tests and fixtures adapted to the collection layout"
+      ]
+    },
+    {
+      "skill": "execution-reliability",
+      "source_path": "skills/execution-reliability",
+      "authority_repository": "https://github.com/JoyceBrown/codex-governance-skills",
+      "origin": "collection-native",
+      "collection_changes": [
+        "bounded execution preflight and artifact verification",
+        "one-retry guard and short receipt renderer"
       ]
     }
   ],

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Execution Reliability"
+  short_description: "Prevent repeatable environment, build, process, and verification mistakes"
+  default_prompt: "Use $execution-reliability automatically for risky execution, build, install, process, and UI actions; keep checks bounded and receipts short."
+
+policy:
+  allow_implicit_invocation: true

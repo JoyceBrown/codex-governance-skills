@@ -19,7 +19,8 @@ $known = @(
     'diagnose',
     'tdd-loop',
     'architecture-health',
-    'capability-director'
+    'capability-director',
+    'execution-reliability'
 )
 
 if ([string]::IsNullOrWhiteSpace($TargetSkillsRoot)) {
