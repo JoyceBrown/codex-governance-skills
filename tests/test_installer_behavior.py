@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import sys
 from pathlib import Path
 
 
@@ -13,6 +14,41 @@ POWERSHELL = shutil.which("pwsh") or shutil.which("powershell")
 
 @unittest.skipUnless(POWERSHELL, "PowerShell is required for installer behavior tests")
 class InstallerBehaviorTests(unittest.TestCase):
+    def test_guard_install_preserves_gates_and_runs_replay(self):
+        with tempfile.TemporaryDirectory(prefix="codex-guard-install-") as temporary:
+            target = Path(temporary) / "skills"
+            command = (
+                f"& {self.ps_quote(INSTALLER)} "
+                f"-TargetSkillsRoot {self.ps_quote(target)} "
+                "-Names @('human-centered-reasoning-guard')"
+            )
+            result = self.run_powershell(command)
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            guard = target / "human-centered-reasoning-guard"
+            source = ROOT / "skills" / "human-centered-reasoning-guard"
+            self.assertEqual(len(list(target.rglob("SKILL.md"))), 1)
+            for relative in (
+                "scripts/fact-gate.ps1", "scripts/goal-integrity-gate.ps1",
+                "scripts/validate-target-identity.ps1", "scripts/sync-durable-ledger.ps1",
+                "references/active-user-reconstruction.md",
+            ):
+                self.assertEqual((guard / relative).read_bytes(), (source / relative).read_bytes())
+            replay = subprocess.run(
+                [sys.executable, "-X", "utf8", str(guard / "replay/evaluator.py"),
+                 str(guard / "examples/replay_request.json")],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(replay.returncode, 0, replay.stderr)
+            output = json.loads(replay.stdout)
+            self.assertEqual(output["llm_calls"], 0)
+            self.assertEqual(output["recommended"]["node_id"], "E2")
+            validation = subprocess.run(
+                [sys.executable, "-X", "utf8", str(guard / "validate_package.py")],
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
+            )
+            self.assertEqual(validation.returncode, 0, validation.stderr)
+            self.assertFalse(json.loads(validation.stdout)["current_user_outcome_verified"])
+
     @staticmethod
     def ps_quote(value: Path) -> str:
         return "'" + str(value).replace("'", "''") + "'"

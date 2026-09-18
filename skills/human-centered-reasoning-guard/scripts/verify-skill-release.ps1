@@ -36,7 +36,16 @@ Run-Check 'python_parse' {
 }
 Run-Check 'skill_structure' {
     $validator = Join-Path $codexHome 'skills\.system\skill-creator\scripts\quick_validate.py'
-    & py -3 $validator $skillRoot | Out-Null
+    # The validator reads SKILL.md as text. Force UTF-8 so Chinese/other
+    # non-ASCII instructions do not depend on the Windows console code page.
+    $python = Get-Command py.exe -ErrorAction SilentlyContinue
+    if ($null -ne $python) {
+        & $python.Source -3 -X utf8 $validator $skillRoot | Out-Null
+    } else {
+        $python = Get-Command python.exe -ErrorAction SilentlyContinue
+        if ($null -eq $python) { throw 'No Python interpreter is available for quick_validate.' }
+        & $python.Source -X utf8 $validator $skillRoot | Out-Null
+    }
     if ($LASTEXITCODE -ne 0) { throw "quick_validate exited with $LASTEXITCODE" }
 }
 if (Test-Path -LiteralPath $ExperienceStore -PathType Leaf) {

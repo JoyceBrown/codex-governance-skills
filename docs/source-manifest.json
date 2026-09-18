@@ -1,6 +1,6 @@
 {
   "schema": "codex-governance-skills-source-manifest-v3",
-  "generated_at": "2026-08-26",
+  "generated_at": "2026-09-18",
   "authority": {
     "repository": "https://github.com/JoyceBrown/codex-governance-skills",
     "branch": "main",
@@ -43,8 +43,18 @@
       },
       "collection_changes": [
         "bounded composition contract",
-        "PowerShell Core-compatible read-only experience retrieval fallback"
-      ]
+        "PowerShell Core-compatible read-only experience retrieval fallback",
+        "HCR 6.2 cognitive mode integrated under the existing Guard authority",
+        "bounded scope-safe replay, offline schemas, and adversarial regressions"
+      ],
+      "package_import": {
+        "artifact": "human-centered-reasoning-v6.2.0.zip",
+        "sha256": "763dddead3e6918558717095f57baa862128629017ce3a974f66675e9bad5364",
+        "upstream_version": "6.2.0",
+        "status": "adapted-and-repaired",
+        "source_role": "user-supplied reference, not maintenance authority",
+        "integration_note": "docs/hcr-6.2-integration.md"
+      }
     },
     {
       "skill": "deliberate-project",

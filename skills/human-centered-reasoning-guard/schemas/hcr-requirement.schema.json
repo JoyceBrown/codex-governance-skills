@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:codex-governance-skills:hcr:hcr-requirement.schema.json",
+  "title": "HCR Requirement",
+  "type": "object",
+  "required": [
+    "id",
+    "text",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 256
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 4096
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACTIVE",
+        "COMPLETED",
+        "SUPERSEDED",
+        "REJECTED"
+      ],
+      "readOnly": true,
+      "description": "Projection of the authoritative requirement owner; HCR does not mutate it.",
+      "maxLength": 256
+    },
+    "source": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 256
+    }
+  },
+  "additionalProperties": false
+}

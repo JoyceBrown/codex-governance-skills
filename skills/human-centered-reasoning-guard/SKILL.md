@@ -1,6 +1,6 @@
 ---
 name: human-centered-reasoning-guard
-description: Use when a task involves software changes, debugging, UI/UX, performance, caching, synchronization, networking, permissions, deployment, deletion, migration, multiple agents or providers, repeated failure, user reports that a fix did not change the result, work resumed after interruption, or the user explicitly asks to understand a requirement from the user's perspective before implementation. Reframe the work around the user's real-world outcome, verify root causes and boundaries, protect authorization, and capture only validated reusable lessons.
+description: Use for software changes, debugging, user-outcome verification, consequential actions, repeated failure, or recovery after interruption; also for explicit user-perspective or structural reasoning requests. Protect goal, scope, authorization and completion evidence. When current evidence warrants it, use scoped historical replay and competing models without creating another plan, memory store or runtime.
 ---
 
 # Human-Centered Reasoning Guard
@@ -10,6 +10,34 @@ description: Use when a task involves software changes, debugging, UI/UX, perfor
 Treat the user's lived outcome as the primary requirement. Before changing a system, distinguish the symptom from the real goal, separate facts from assumptions, and choose the smallest reversible action that increases certainty. After acting, verify the path a non-technical user actually follows. Do not claim completion without fresh evidence.
 
 This is a guard layer, not a replacement for domain skills, tests, security controls, or product decisions.
+
+## Cognitive Mode (HCR 6.2 integration)
+
+The existing Guard remains the action and completion gate. Its optional cognitive
+mode protects WHY (current user intent), WHAT (observable acceptance), and treats
+HOW as a replaceable candidate within the approved scope. Neither a historical
+success nor a reasoning result may rewrite an approved requirement or route.
+
+Use ordinary light/full/reset routing below first. For a decisive evidence
+conflict, perform a small epistemic check; normally require two independent
+material signals of repeated failure, stalled acceptance, or proxy completion
+before deep structural reasoning. An explicit request for deeper analysis also
+qualifies. These cognitive triggers do not weaken the existing reset, action,
+identity, or completion gates.
+
+Read [references/cognitive-reasoning.md](references/cognitive-reasoning.md) only
+when this mode is useful. It covers epistemic states, bounded historical HOW
+search, structurally distinct models, falsification, a second round driven by
+new evidence, and stop/cost rules. No extra model, telemetry service, or history
+search is required for ordinary tasks.
+
+When eligible structured history already exists, use the optional zero-LLM
+[replay/evaluator.py](replay/evaluator.py) under
+[references/host-spec-v1.md](references/host-spec-v1.md). Inputs are authorized
+projections; outputs remain candidates. Missing history falls back to current
+evidence. Replay cannot grant permission, lift a Guard block, write project truth,
+or establish completion. The existing experience and continuity owners retain
+their storage and promotion workflows.
 
 ## Activation Tiers
 
@@ -94,7 +122,7 @@ Ask internally, in this order:
 
 For an active user-perspective request, answer these questions before considering HOW: why the user raised the request now, what job they are trying to complete, what experience they expect, what they would accept as “solved,” and which part of the named solution may only be a proxy. Keep this reconstruction separate from the later causal/root-cause hypotheses used for a technical fix.
 
-List a minimum of two competing explanations. For each, state a prediction and the cheapest observation that could disprove it. Do not convert a guess into a fix.
+When multiple explanations remain plausible and choosing prematurely would matter, keep two or three structurally distinct candidates, each with a prediction and the cheapest falsifier. Otherwise proceed with the evidenced explanation. Do not convert a guess into a fix.
 
 ## Execution Guardrails
 
@@ -162,6 +190,13 @@ After interruption, compaction, or handoff, restore from the durable task card d
 
 This guard is independently usable and remains the gate for writes, external state, and consequential completion claims. Optional integrations exchange only a bounded envelope: `request_id`, `risk`, `target`, `source_of_truth`, `evidence_refs`, `authorization`, `rollback`, and `next_action`.
 
+HCR cognitive mode is an internal consumer/proposer, not another governance
+authority. Its requirement list and governance statuses are read-only projections;
+its epistemic labels do not promote a claim into an accepted decision. Raw
+experience trees stay outside the shared envelope: pass bounded findings and
+evidence references. Existing authorization remains valid for the same action and
+scope; a Replay recommendation never supplies missing authorization.
+
 - `intent-alignment` may clarify the real user goal and visible success state. It cannot authorize a mutation or replace the current user instruction.
 - In active mode, this guard reconstructs the user journey and tests whether the named request is a proxy for a different outcome. `intent-alignment` then compresses the confirmed outcome into scope, constraints, and unknowns; neither skill may silently turn an assumption into authorization.
 - `diagnose` and `architecture-health` may provide competing hypotheses and boundary findings. Require a discriminating check before treating either as causal evidence.
@@ -190,6 +225,9 @@ Use [scripts/evaluate-guard-coverage.ps1](scripts/evaluate-guard-coverage.ps1) t
 After an authorized replay, record results with [scripts/record-evaluation-outcome.ps1](scripts/record-evaluation-outcome.ps1), then pair and score them with [scripts/compile-scored-evaluation.ps1](scripts/compile-scored-evaluation.ps1). Both are evidence recorders, not replay executors.
 
 ## Reference Navigation
+
+- Event-triggered epistemic and structural reasoning: [references/cognitive-reasoning.md](references/cognitive-reasoning.md)
+- Optional Replay API, projections, schemas and fallback: [references/host-spec-v1.md](references/host-spec-v1.md)
 
 - Root-cause, user-cost, and architecture checks: [references/reframe-and-failure-patterns.md](references/reframe-and-failure-patterns.md)
 - Plan changes and long-task drift: [references/plan-reconciliation.md](references/plan-reconciliation.md)

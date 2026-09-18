@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:codex-governance-skills:hcr:hcr-strategy.schema.json",
+  "title": "HCR Replay Strategy",
+  "type": "object",
+  "required": [],
+  "properties": {
+    "branch_priority": {
+      "type": "string",
+      "enum": [
+        "goal_progress",
+        "low_cost",
+        "evidence_first",
+        "balanced"
+      ],
+      "maxLength": 256
+    },
+    "avoid_failure_classes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S",
+        "maxLength": 256
+      },
+      "uniqueItems": true,
+      "maxItems": 100
+    },
+    "max_depth": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32
+    },
+    "early_stop_goal_progress": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "cost_weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "risk_weight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "require_same_scope": {
+      "type": "boolean",
+      "description": "Compatibility flag only. Both values preserve exact project/environment/runtime/dependency matching."
+    }
+  },
+  "additionalProperties": false
+}

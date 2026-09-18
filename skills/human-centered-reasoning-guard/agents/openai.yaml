@@ -1,4 +1,4 @@
 interface:
   display_name: "Human-Centered Reasoning Guard"
-  short_description: "Reframe work around user outcomes, including active requirement understanding"
-  default_prompt: "Apply the human-centered reasoning guard; if the user asks for a user-perspective review, pause implementation and reconstruct the desired outcome first."
+  short_description: "Protect user outcomes with evidence, scoped replay and reasoning"
+  default_prompt: "Use $human-centered-reasoning-guard to verify the intended outcome and action boundaries, applying scoped replay or structural reasoning when current evidence warrants it."

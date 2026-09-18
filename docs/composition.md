@@ -14,6 +14,8 @@
 - 当前需求以 `requirements.md` 为准；活动计划的权责由 Bootstrap 识别。
 - `.agent-context` 只由 Durable 的生命周期维护，不由原子 Skill 直接写入。
 - Guard 的阻断不可被其他 Skill 覆盖；缺少授权、回滚或基线时停止在门禁。
+- Guard 内的 HCR 认知模块只消费授权投影、提出候选或验证请求，不新增权限层。WHY/WHAT 取当前用户要求和权威需求/计划；HOW 调整仍受原批准路线约束。认知状态与治理状态分开，Replay 分数和历史成功不能修改当前事实或完成状态。
+- HCR 的需求列表和 ExperienceNode 是既有记录的只读投影，不建立第二需求账本或经验库。缺少目标、结果、进度或适用性证据时不得从旧摘要补齐；无可用历史就回到当前证据。跨 Skill 只交换既有信封与证据引用，不传整棵经验树。
 - Deliberate 的发现保留不确定性，不自动变成决策。
 - 原子 Skill 缺席时回退到主代理的普通能力，记录真实缺口，不递归启动代理或服务。
 - `execution-reliability` 只负责执行证据和一次性重试判断；它不调用 `deliberate-project`，不修改治理文件，不写 `.agent-context`。它的 `review_candidate` 只是供显式审议入口参考的信号。

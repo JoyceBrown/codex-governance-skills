@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:codex-governance-skills:hcr:hcr-telemetry.schema.json",
+  "title": "HCR Telemetry",
+  "type": "object",
+  "required": [
+    "telemetry_source",
+    "telemetry_confidence"
+  ],
+  "properties": {
+    "failure_count_total": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "same_region_modifications": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "acceptance_unchanged_iterations": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "llm_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "input_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "output_tokens": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "elapsed_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "tool_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "repeated_commands": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "repeated_files": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "user_continue_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "user_negative_signal_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1000000000000
+    },
+    "failure_class_counts": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1000000000000
+      }
+    },
+    "goal_progress": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0,
+      "maximum": 1
+    },
+    "local_test_pass": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "requirement_complete": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "user_outcome_complete": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "high_impact_action_pending": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "telemetry_source": {
+      "type": "string",
+      "enum": [
+        "runtime",
+        "hook",
+        "manual",
+        "unknown"
+      ],
+      "maxLength": 256
+    },
+    "telemetry_confidence": {
+      "type": "string",
+      "enum": [
+        "measured",
+        "estimated",
+        "unknown"
+      ],
+      "maxLength": 256
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "telemetry_source": {
+            "enum": [
+              "manual",
+              "unknown"
+            ]
+          }
+        },
+        "required": [
+          "telemetry_source"
+        ]
+      },
+      "then": {
+        "properties": {
+          "telemetry_confidence": {
+            "const": "unknown"
+          }
+        }
+      }
+    }
+  ]
+}

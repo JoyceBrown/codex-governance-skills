@@ -1,0 +1,124 @@
+{
+  "why": "保证跨 Session 工作连续性",
+  "what": "重新打开后能够定位正确项目、正确会话并恢复正确 Runtime 状态",
+  "constraints": [
+    "不改变用户权限",
+    "优先可逆验证"
+  ],
+  "experience_nodes": [
+    {
+      "node_id": "E1",
+      "goal": {
+        "why": "保证跨 Session 工作连续性",
+        "what": "重新打开后能够定位正确项目、正确会话并恢复正确 Runtime 状态"
+      },
+      "action": "仅保存 session_id",
+      "result": "partial",
+      "failure_class": "workspace_binding_loss",
+      "goal_progress": 0.45,
+      "evidence_refs": [
+        "obs-1"
+      ],
+      "scope": {
+        "project_id": "demo",
+        "environment_scope": "desktop-codex",
+        "runtime_id": "demo-runtime-v1"
+      },
+      "execution_cost": {
+        "llm_calls": 1,
+        "input_tokens": 1200,
+        "output_tokens": 500,
+        "elapsed_ms": 9000,
+        "tool_calls": 2
+      },
+      "risk": "low",
+      "status": "active",
+      "dependencies": [],
+      "constraints": [
+        "不改变用户权限",
+        "优先可逆验证"
+      ]
+    },
+    {
+      "node_id": "E2",
+      "goal": {
+        "why": "保证跨 Session 工作连续性",
+        "what": "重新打开后能够定位正确项目、正确会话并恢复正确 Runtime 状态"
+      },
+      "action": "保存 session + workspace + runtime binding",
+      "result": "success",
+      "goal_progress": 0.95,
+      "evidence_refs": [
+        "test-2",
+        "obs-3"
+      ],
+      "scope": {
+        "project_id": "demo",
+        "environment_scope": "desktop-codex",
+        "runtime_id": "demo-runtime-v1"
+      },
+      "execution_cost": {
+        "llm_calls": 2,
+        "input_tokens": 2200,
+        "output_tokens": 800,
+        "elapsed_ms": 15000,
+        "tool_calls": 4
+      },
+      "risk": "medium",
+      "status": "active",
+      "dependencies": [],
+      "constraints": [
+        "不改变用户权限",
+        "优先可逆验证"
+      ]
+    },
+    {
+      "node_id": "E3",
+      "goal": {
+        "why": "保证跨 Session 工作连续性",
+        "what": "重新打开后能够定位正确项目、正确会话并恢复正确 Runtime 状态"
+      },
+      "action": "只依赖 context.md 重建",
+      "result": "failure",
+      "failure_class": "runtime_state_not_reconstructable",
+      "goal_progress": 0.15,
+      "evidence_refs": [
+        "test-4"
+      ],
+      "scope": {
+        "project_id": "demo",
+        "environment_scope": "desktop-codex",
+        "runtime_id": "demo-runtime-v1"
+      },
+      "execution_cost": {
+        "llm_calls": 1,
+        "input_tokens": 1000,
+        "output_tokens": 300,
+        "elapsed_ms": 6000,
+        "tool_calls": 1
+      },
+      "risk": "low",
+      "status": "active",
+      "dependencies": [],
+      "constraints": [
+        "不改变用户权限",
+        "优先可逆验证"
+      ]
+    }
+  ],
+  "strategy": {
+    "branch_priority": "goal_progress",
+    "avoid_failure_classes": [
+      "runtime_state_not_reconstructable"
+    ],
+    "max_depth": 4,
+    "early_stop_goal_progress": 0.8,
+    "cost_weight": 0.1,
+    "risk_weight": 0.1,
+    "require_same_scope": true
+  },
+  "environment_scope": "desktop-codex",
+  "project_id": "demo",
+  "runtime_id": "demo-runtime-v1",
+  "dependencies": []
+}

@@ -7,6 +7,7 @@ $testRoots = @(
     (Join-Path $root 'skills\bootstrap-codex-project\tests'),
     (Join-Path $root 'skills\deliberate-project\tests'),
     (Join-Path $root 'skills\durable-context\tests'),
+    (Join-Path $root 'skills\human-centered-reasoning-guard\tests'),
     (Join-Path $root 'skills\execution-reliability\tests')
 )
 foreach ($testRoot in $testRoots) {
@@ -23,6 +24,9 @@ foreach ($testRoot in $testRoots) {
 $guardRegression = Join-Path $root 'skills\human-centered-reasoning-guard\scripts\run-regression-tests.ps1'
 & $guardRegression
 if ($LASTEXITCODE -ne 0) { throw 'Human-centered guard regression tests failed.' }
+
+python -X utf8 (Join-Path $root 'skills\human-centered-reasoning-guard\validate_package.py')
+if ($LASTEXITCODE -ne 0) { throw 'Human-centered guard package validation failed.' }
 
 $codexRoot = if (-not [string]::IsNullOrWhiteSpace($env:CODEX_HOME)) {
     $env:CODEX_HOME

@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:codex-governance-skills:hcr:hcr-host-context.schema.json",
+  "title": "HCR Host Context",
+  "type": "object",
+  "required": [
+    "context_version",
+    "task_id",
+    "why",
+    "what",
+    "runtime",
+    "telemetry",
+    "constraints"
+  ],
+  "properties": {
+    "context_version": {
+      "type": "string",
+      "const": "hcr-host-v1",
+      "maxLength": 256
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 256
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 4096
+    },
+    "what": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S",
+      "maxLength": 4096
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S",
+        "maxLength": 256
+      },
+      "uniqueItems": true,
+      "maxItems": 100
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "runtime_id",
+        "project_id",
+        "environment_scope"
+      ],
+      "properties": {
+        "runtime_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 256
+        },
+        "project_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 256
+        },
+        "environment_scope": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "telemetry": {
+      "$ref": "hcr-telemetry.schema.json"
+    },
+    "epistemic": {
+      "type": "array",
+      "items": {
+        "$ref": "hcr-epistemic-record.schema.json"
+      },
+      "maxItems": 100
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "$ref": "hcr-requirement.schema.json"
+      },
+      "maxItems": 100
+    },
+    "experience_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "\\S",
+        "maxLength": 256
+      },
+      "uniqueItems": true,
+      "maxItems": 100
+    }
+  },
+  "additionalProperties": false
+}

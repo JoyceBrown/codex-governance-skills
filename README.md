@@ -42,6 +42,8 @@
 
 `human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context` 和 `deliberate-project` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
 
+Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理和零 LLM Cognitive Replay。唯一入口仍为 `human-centered-reasoning-guard`，原事实门、目标门、身份、回滚、完成验证和单账本桥接继续负责原有边界。深层认知按事件触发；Replay 只读取经授权的经验投影，筛选项目、环境、约束和有效性后输出历史候选，不能批准执行或写成当前事实。缺少结构化历史时正常回到当前证据，不要求安装宿主、Hook 或数据库。来源、修复和功能映射见 [接入说明](docs/hcr-6.2-integration.md)。
+
 当你主动要求“从用户角度重新思考这个需求”时，`human-centered-reasoning-guard` 会进入主动用户视角模式：先暂停技术实现，重建“问题触发 -> 用户任务 -> 期望体验 -> 可见成功 -> 失败恢复”的路径，区分事实、假设和未知，再给出 `CONTINUE / REFRAME / ASK / STOP`。默认停在只读理解结果，不会因为你提到一个功能名就直接改代码。确认理解后再说“继续实现”，才进入正常的授权、事实门和验证流程。
 
 `capability-director` 只在当前能力明显不匹配时建议“使用、借鉴、Fork、安装或拒绝”。它先检查项目已有能力和 Codex 原生能力，最多给出 3 个候选，并记录问题、范围、来源和结论；它不会自动下载、修改配置、授予权限或启动插件运行时。
@@ -122,6 +124,8 @@ Set-Location codex-governance-skills
 ```
 
 验证脚本会运行合集合同测试、三套内嵌 Python 测试、human-centered guard 的 PowerShell 回归测试，以及本机可用时的全部 `quick_validate.py`。仓库合同还检查 Git 路径分隔符和待发布文本 blob 的 UTF-8/LF 规范，防止首次远端提交的问题回归。
+
+验证还包含 Guard 的 Python Replay/离线 Schema 回归和真实示例输入输出契约。运行 `python -X utf8 skills/human-centered-reasoning-guard/validate_package.py` 可单独核对新增资源与示例。程序验证证明本地工具与合同可用；真实任务中的用户收益仍需独立验收。
 
 ## 旧仓库处理
 
