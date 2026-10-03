@@ -185,6 +185,12 @@ construction and reports executable/startup failures as bounded
 entry point that creates this bridge on demand; it does not require the
 desktop UI's private connection to be exposed.
 
+On Windows, `CodexAppServerBridge.local()` resolves a bare executable through
+the current `PATH`, prefers a matching native `.exe`, and runs a `.cmd` or
+`.bat` shim through `%COMSPEC%` with a quoted `/c` command. This keeps the
+default `executable="codex"` usable when Codex is installed as an npm shim,
+while an explicitly supplied executable path remains authoritative.
+
 The bridge is a transport binding, not a second orchestrator. It does not
 claim that a separate stdio process is the desktop's live connection; a host
 that needs one shared daemon must inject a JSON-RPC transport connected to the
