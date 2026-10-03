@@ -162,8 +162,8 @@ class AppServerBridgeTests(unittest.TestCase):
         ):
             command = _resolve_process_command("codex", ("app-server", "--stdio"), platform_name="nt")
 
-        self.assertEqual(command[:4], [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"])
-        self.assertEqual(command[4], f'"{shim}" app-server --stdio')
+        expected_comspec = r"C:\Windows\System32\cmd.exe"
+        self.assertEqual(command, f'{expected_comspec} /d /s /c ""{shim}" app-server --stdio"')
 
     def test_windows_explicit_bat_path_with_spaces_keeps_arguments(self) -> None:
         shim = r"C:\Program Files\Codex\codex.bat"
@@ -173,8 +173,7 @@ class AppServerBridgeTests(unittest.TestCase):
         ):
             command = _resolve_process_command(shim, ("app-server", "--stdio"), platform_name="nt")
 
-        self.assertEqual(command[0], "cmd.exe")
-        self.assertEqual(command[4], f'"{shim}" app-server --stdio')
+        self.assertEqual(command, f'cmd.exe /d /s /c ""{shim}" app-server --stdio"')
 
     def test_non_windows_command_is_unchanged(self) -> None:
         self.assertEqual(

@@ -38,7 +38,7 @@ def _resolve_process_command(
     args: Sequence[str],
     *,
     platform_name: str | None = None,
-) -> list[str]:
+) -> list[str] | str:
     """Resolve a local app-server command without relying on ``shell=True``.
 
     On Windows, ``CreateProcess`` cannot execute a ``.cmd``/``.bat`` shim when
@@ -67,10 +67,11 @@ def _resolve_process_command(
         return [resolved or executable, *command_args]
 
     comspec = os.environ.get("COMSPEC") or "cmd.exe"
-    # Keep the complete script invocation in one /c argument.  list2cmdline
-    # quotes paths containing spaces and preserves the two app-server flags.
+    # Keep the complete script invocation in one /c command.  Passing this as
+    # a string is intentional: Popen's Windows list quoting escapes embedded
+    # quotes as backslashes, which cmd.exe does not treat as quote escapes.
     script_command = subprocess.list2cmdline([resolved or executable, *command_args])
-    return [comspec, "/d", "/s", "/c", script_command]
+    return f"{subprocess.list2cmdline([comspec])} /d /s /c \"{script_command}\""
 
 
 @dataclass(frozen=True)
