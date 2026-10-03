@@ -12,7 +12,7 @@
 | 治理 | `durable-context` | 跨会话恢复、基线漂移、有限检索和只读 Context MCP | 复杂任务维护项目本地账本；普通问题不建账 |
 | 治理 | `human-centered-reasoning-guard` | 事实门禁、目标门禁、身份、回滚和完成验证 | 只约束被调用的具体高风险动作，不阻断普通会话 |
 | 治理 | `deliberate-project` | 显式调用的多角度、证据驱动只读审议 | 不修改项目；经验目录另有明确授权时才写入 |
-| 治理 | `project-agent-orchestrator` | 项目总指挥、职责型主会话、内部子代理、任务派发和结构化回调 | 仅在宿主能力预检通过后派发；不替代计划、验收或宿主传输 |
+| 治理 | `project-agent-orchestrator` | 当前会话内的项目计划执行、恢复和可选内部辅助 | 仅在用户显式开启后运行；不创建额外会话或外部服务 |
 | 原子 | `intent-alignment` | 把模糊请求压缩为目标、成功状态、范围和未知 | 只读 |
 | 原子 | `diagnose` | 竞争根因、复现路径、区分性检查和证据链 | 只读，除非用户另行授权修复 |
 | 原子 | `tdd-loop` | 红-绿-重构、回归、用户路径验证和测试成本控制 | 只修改授权范围内的代码/测试 |
@@ -37,7 +37,7 @@
 结构、依赖或容量疑问 -> architecture-health
 执行、构建、安装、进程或 UI 易出错 -> execution-reliability
 写入、外部副作用或完成声明 -> human-centered-reasoning-guard
-跨会话项目编排、角色会话和回调 -> project-agent-orchestrator
+项目长任务直接执行和恢复       -> project-agent-orchestrator
 能力明显错配         -> capability-director（只读候选诊断）
 用户明确“三堂会审”   -> deliberate-project（显式、只读）
 ```
@@ -52,11 +52,7 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 
 `execution-reliability` 是执行层配套 Skill。它在构建、安装、发布、Windows 命令、路径、环境变量、Git、进程和 UI 自动化出现风险信号时做最小预检和后置核验；同一动作最多自动重试一次，状态未知先检查。它不拥有计划、记忆、授权或“三堂会审”，不注册全局 Hook，也不把一次错误自动升级为永久规则。
 
-`project-agent-orchestrator` 负责一个项目总指挥与职责型长期主会话、短期内部子代理之间的路由、任务契约、宿主投递、来源标注、回调持久化和依赖推进。它按生命周期、所有权、独立上下文、验收责任、回调责任和恢复需要路由，复杂度只是次要信号；有兼容的既有职责会话时，用户未选择 `reuse`、`takeover` 或 `new` 就保持待决，不静默重复创建。当前参考实现是 transport-neutral 的状态机和宿主适配器合同；没有真实跨会话创建、发送、唤醒和恢复接口时只返回 `capability_gap`，不声称完成了 Codex 多会话绑定。
-
-Codex app-server 的真实边界已经单独验证：当前桌面连接只提供私有 stdio，未显式报告共享 unix/ws/websocket 端点时，桌面跨会话编排返回 `capability_gap`。持久线程可从 `thread/read` 回读；`ephemeral=true` 临时线程不支持 turns 回读，只能在当前连接接收 `item/*`、`turn/*` 通知，宿主重启后结果必须进入 `unknown` 恢复核对。可用 `python skills/project-agent-orchestrator/scripts/live_app_server_smoke.py` 重跑有限的真实协议 smoke；它不会把模拟 transport 测试当作服务端兼容证明。
-
-清理旧项目后重新开始时，使用 PAO 的 fresh-start 路径：宿主会先确认项目任务已经终态，按子会话、职责会话、旧总指挥的顺序清理，再绑定新的总指挥；这条路径不等待旧代理 ACK，也不会把旧交接协议变成启动阻塞。`LiveHostAdapter.local()` 会按需启动独立 app-server；启动失败会在有界超时内返回 `app_server_unavailable`，不会无限等待。
+`project-agent-orchestrator` 负责在当前会话中按唯一项目计划推进长任务、恢复中断、记录验证和管理可选的短期内部辅助。用户显式开启后立即可用；缺少外部宿主、额外聊天或辅助代理不影响当前会话开发。`references/` 与 `scripts/` 中的跨会话材料仅保留作历史兼容资料，不是本 Skill 的启动条件或完成门禁。
 
 ## 组合信封
 
@@ -119,7 +115,7 @@ Set-Location codex-governance-skills
 ```
 
 ```text
-按项目计划建立一个总指挥会话；需要长期独立职责时复用、接管或新建职责型主会话，需要一次性分析时使用内部子代理。所有结果通过结构化回调返回，并在验收门禁通过后继续下一步。
+开启 PAO，按项目计划在当前会话直接推进；必要时使用有界内部辅助，并在本会话完成验证和收据。
 ```
 
 ```text
