@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import shutil
 import subprocess
 import threading
 import time
@@ -20,7 +21,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Mapping, Protocol, Sequence
 
 try:
     from host_adapter import rotation_recommendation
@@ -30,6 +31,46 @@ except ImportError:  # pragma: no cover - package import fallback
 
 class AppServerError(RuntimeError):
     """An app-server request failed or returned an invalid response."""
+
+
+def _resolve_process_command(
+    executable: str,
+    args: Sequence[str],
+    *,
+    platform_name: str | None = None,
+) -> list[str]:
+    """Resolve a local app-server command without relying on ``shell=True``.
+
+    On Windows, ``CreateProcess`` cannot execute a ``.cmd``/``.bat`` shim when
+    it is passed directly to ``Popen``.  Resolve bare commands with ``which``
+    (preferring a native ``.exe`` when one is available), then route script
+    shims through the system command interpreter.  ``platform_name`` exists
+    only to make the platform-specific branch deterministic in unit tests.
+    """
+
+    command_args = [str(value) for value in args]
+    if (platform_name or os.name) != "nt":
+        return [executable, *command_args]
+
+    explicit_suffix = os.path.splitext(executable)[1].lower()
+    resolved: str | None
+    if explicit_suffix in {".exe", ".cmd", ".bat"}:
+        resolved = shutil.which(executable) or executable
+    else:
+        # ``shutil.which('codex')`` follows PATHEXT/PATH order and can select
+        # an npm ``codex.cmd`` even when a native Codex executable is present.
+        # Prefer the native binary, then fall back to the first Windows shim.
+        resolved = shutil.which(f"{executable}.exe") or shutil.which(executable)
+
+    suffix = os.path.splitext(resolved)[1].lower() if resolved else explicit_suffix
+    if suffix not in {".cmd", ".bat"}:
+        return [resolved or executable, *command_args]
+
+    comspec = os.environ.get("COMSPEC") or "cmd.exe"
+    # Keep the complete script invocation in one /c argument.  list2cmdline
+    # quotes paths containing spaces and preserves the two app-server flags.
+    script_command = subprocess.list2cmdline([resolved or executable, *command_args])
+    return [comspec, "/d", "/s", "/c", script_command]
 
 
 @dataclass(frozen=True)
@@ -144,7 +185,7 @@ class StdioJsonRpcTransport:
             if self.codex_home:
                 environment["CODEX_HOME"] = self.codex_home
             self._process = subprocess.Popen(
-                [self.executable, "app-server", "--stdio"],
+                _resolve_process_command(self.executable, ("app-server", "--stdio")),
                 cwd=self.cwd,
                 env=environment,
                 stdin=subprocess.PIPE,

@@ -4,6 +4,7 @@ import queue
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -15,6 +16,7 @@ from app_server_bridge import (
     HostReceipt,
     LiveHostAdapter,
     StdioJsonRpcTransport,
+    _resolve_process_command,
     probe_desktop_host,
 )
 from host_adapter import DISPATCH_CAPABILITIES, HANDOFF_CAPABILITIES, HostAdapter, event_template, packet_template
@@ -140,6 +142,46 @@ class SupervisorLive:
 
 
 class AppServerBridgeTests(unittest.TestCase):
+    def test_windows_native_executable_is_preferred_over_cmd_shim(self) -> None:
+        def which(value: str) -> str | None:
+            return {
+                "codex.exe": r"C:\OpenAI\Codex\codex.exe",
+                "codex": r"C:\Users\JIE\AppData\Roaming\npm\codex.cmd",
+            }.get(value)
+
+        with patch("app_server_bridge.shutil.which", side_effect=which):
+            command = _resolve_process_command("codex", ("app-server", "--stdio"), platform_name="nt")
+
+        self.assertEqual(command, [r"C:\OpenAI\Codex\codex.exe", "app-server", "--stdio"])
+
+    def test_windows_cmd_shim_is_started_through_comspec(self) -> None:
+        shim = r"C:\Program Files\Codex\codex.cmd"
+        with (
+            patch("app_server_bridge.shutil.which", return_value=shim),
+            patch.dict("app_server_bridge.os.environ", {"COMSPEC": r"C:\Windows\System32\cmd.exe"}, clear=False),
+        ):
+            command = _resolve_process_command("codex", ("app-server", "--stdio"), platform_name="nt")
+
+        self.assertEqual(command[:4], [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c"])
+        self.assertEqual(command[4], f'"{shim}" app-server --stdio')
+
+    def test_windows_explicit_bat_path_with_spaces_keeps_arguments(self) -> None:
+        shim = r"C:\Program Files\Codex\codex.bat"
+        with (
+            patch("app_server_bridge.shutil.which", return_value=None),
+            patch.dict("app_server_bridge.os.environ", {}, clear=True),
+        ):
+            command = _resolve_process_command(shim, ("app-server", "--stdio"), platform_name="nt")
+
+        self.assertEqual(command[0], "cmd.exe")
+        self.assertEqual(command[4], f'"{shim}" app-server --stdio')
+
+    def test_non_windows_command_is_unchanged(self) -> None:
+        self.assertEqual(
+            _resolve_process_command("codex", ("app-server", "--stdio"), platform_name="posix"),
+            ["codex", "app-server", "--stdio"],
+        )
+
     def test_desktop_probe_rejects_private_stdio_and_unrelated_ipc(self) -> None:
         receipt = probe_desktop_host(
             DesktopHostSnapshot(

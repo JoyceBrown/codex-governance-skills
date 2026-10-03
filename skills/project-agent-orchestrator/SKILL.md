@@ -52,8 +52,6 @@ PAO 默认关闭。只有用户明确输入以下任一指令才开启：
 
 ## Composition Contract
 
-## Composition Contract
-
 ## 组合边界
 
 - bootstrap-codex-project 负责项目文件、计划权威和 on_complete。
