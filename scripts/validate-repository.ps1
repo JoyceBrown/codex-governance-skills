@@ -21,6 +21,15 @@ foreach ($testRoot in $testRoots) {
     }
 }
 
+$paoRoot = Join-Path $root 'skills\project-agent-orchestrator'
+Push-Location $paoRoot
+try {
+    python -X utf8 -m unittest discover -s 'scripts' -p 'test_*.py' -v
+    if ($LASTEXITCODE -ne 0) { throw 'Project Agent Orchestrator regression tests failed.' }
+} finally {
+    Pop-Location
+}
+
 $guardRegression = Join-Path $root 'skills\human-centered-reasoning-guard\scripts\run-regression-tests.ps1'
 & $guardRegression
 if ($LASTEXITCODE -ne 0) { throw 'Human-centered guard regression tests failed.' }

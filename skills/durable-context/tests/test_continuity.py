@@ -186,7 +186,7 @@ class ContinuityContractTests(unittest.TestCase):
         self.assertIn(task, mcp.stdout.decode("utf-8"))
 
     def test_lifecycle_whitelist_rejects_composite_and_fake_paths(self) -> None:
-        command = f'{sys.executable} "{Path(context_state.__file__).resolve()}" --root "{self.root}" auto --event verify'
+        command = f'"{sys.executable}" "{Path(context_state.__file__).resolve()}" --root "{self.root}" auto --event verify'
         payload = {"tool_name": "Bash", "tool_input": {"command": command}}
         self.assertTrue(codex_hook.is_lifecycle_repair(payload, self.root, self.ledger))
         payload["tool_input"]["command"] = command.replace("--event verify", "--event repair")
@@ -207,7 +207,7 @@ class ContinuityContractTests(unittest.TestCase):
         child.mkdir()
         child_ledger = child / context_state.DEFAULT_DIR
         context_state.automatic(child, child_ledger, "start", "Child task", "", "", "", "", "active", 3000)
-        command = f'{sys.executable} "{Path(context_state.__file__).resolve()}" --root "{child}" auto --event verify'
+        command = f'"{sys.executable}" "{Path(context_state.__file__).resolve()}" --root "{child}" auto --event verify'
         payload = {
             "hook_event_name": "PreToolUse",
             "cwd": str(self.root),

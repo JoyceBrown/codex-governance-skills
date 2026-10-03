@@ -2,7 +2,7 @@
 
 这是一个面向 Codex 的中文 Skill 集合，目标是让长任务能够恢复正确基线，让软件变更先验证真实目标，再用最小成本完成诊断、测试和架构检查。
 
-本仓库包含 4 个成熟治理 Skill 和 6 个轻量原子工程 Skill。每个 Skill 都可以单独使用；组合时只交换有限的结构化摘要，不复制聊天记录、不建立第二套项目事实源、不自动安装或运行陌生能力。
+本仓库包含 5 个治理 Skill 和 6 个轻量原子工程 Skill。每个 Skill 都可以单独使用；组合时只交换有限的结构化摘要，不复制聊天记录、不建立第二套项目事实源、不自动安装或运行陌生能力。
 
 ## 内容状态
 
@@ -12,6 +12,7 @@
 | 治理 | `durable-context` | 跨会话恢复、基线漂移、有限检索和只读 Context MCP | 复杂任务维护项目本地账本；普通问题不建账 |
 | 治理 | `human-centered-reasoning-guard` | 事实门禁、目标门禁、身份、回滚和完成验证 | 只约束被调用的具体高风险动作，不阻断普通会话 |
 | 治理 | `deliberate-project` | 显式调用的多角度、证据驱动只读审议 | 不修改项目；经验目录另有明确授权时才写入 |
+| 治理 | `project-agent-orchestrator` | 项目总指挥、职责型主会话、内部子代理、任务派发和结构化回调 | 仅在宿主能力预检通过后派发；不替代计划、验收或宿主传输 |
 | 原子 | `intent-alignment` | 把模糊请求压缩为目标、成功状态、范围和未知 | 只读 |
 | 原子 | `diagnose` | 竞争根因、复现路径、区分性检查和证据链 | 只读，除非用户另行授权修复 |
 | 原子 | `tdd-loop` | 红-绿-重构、回归、用户路径验证和测试成本控制 | 只修改授权范围内的代码/测试 |
@@ -19,7 +20,7 @@
 | 原子 | `capability-director` | 判断能力错配，比较有限候选并输出薄 Receipt | 只读；不安装、不启用、不执行陌生能力 |
 | 原子 | `execution-reliability` | 执行环境、目标、产物、进程和有限重试核验 | 无全局 Hook；普通任务 fail-open，高风险动作才阻断 |
 
-四个成熟 Skill 首次从各自公开仓库的已核验 `main` 版本导入；导入完成后，本合集的 `main` 和 `skills/<name>` 是唯一长期维护权威。旧仓完整历史保存在本合集的 `legacy/<skill>/main` 标签中，`docs/source-manifest.json` 同时记录原 URL、提交和归档引用，旧 URL 不再作为上游。本仓库不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前不附带许可证，因为许可证选择需要用户明确决定。
+前四个成熟 Skill 首次从各自公开仓库的已核验 `main` 版本导入；`project-agent-orchestrator` 是本合集原生维护的第五个治理 Skill。导入或创建完成后，本合集的 `main` 和 `skills/<name>` 是唯一长期维护权威。旧仓完整历史保存在本合集的 `legacy/<skill>/main` 标签中，`docs/source-manifest.json` 同时记录原 URL、提交和归档引用，旧 URL 不再作为上游。本仓库不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前不附带许可证，因为许可证选择需要用户明确决定。
 
 ## 怎么组合
 
@@ -36,11 +37,12 @@
 结构、依赖或容量疑问 -> architecture-health
 执行、构建、安装、进程或 UI 易出错 -> execution-reliability
 写入、外部副作用或完成声明 -> human-centered-reasoning-guard
+跨会话项目编排、角色会话和回调 -> project-agent-orchestrator
 能力明显错配         -> capability-director（只读候选诊断）
 用户明确“三堂会审”   -> deliberate-project（显式、只读）
 ```
 
-`human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context` 和 `deliberate-project` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
+`human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context`、`deliberate-project` 和 `project-agent-orchestrator` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
 
 Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理和零 LLM Cognitive Replay。唯一入口仍为 `human-centered-reasoning-guard`，原事实门、目标门、身份、回滚、完成验证和单账本桥接继续负责原有边界。深层认知按事件触发；Replay 只读取经授权的经验投影，筛选项目、环境、约束和有效性后输出历史候选，不能批准执行或写成当前事实。缺少结构化历史时正常回到当前证据，不要求安装宿主、Hook 或数据库。来源、修复和功能映射见 [接入说明](docs/hcr-6.2-integration.md)。
 
@@ -49,6 +51,12 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 `capability-director` 只在当前能力明显不匹配时建议“使用、借鉴、Fork、安装或拒绝”。它先检查项目已有能力和 Codex 原生能力，最多给出 3 个候选，并记录问题、范围、来源和结论；它不会自动下载、修改配置、授予权限或启动插件运行时。
 
 `execution-reliability` 是执行层配套 Skill。它在构建、安装、发布、Windows 命令、路径、环境变量、Git、进程和 UI 自动化出现风险信号时做最小预检和后置核验；同一动作最多自动重试一次，状态未知先检查。它不拥有计划、记忆、授权或“三堂会审”，不注册全局 Hook，也不把一次错误自动升级为永久规则。
+
+`project-agent-orchestrator` 负责一个项目总指挥与职责型长期主会话、短期内部子代理之间的路由、任务契约、宿主投递、来源标注、回调持久化和依赖推进。它按生命周期、所有权、独立上下文、验收责任、回调责任和恢复需要路由，复杂度只是次要信号；有兼容的既有职责会话时，用户未选择 `reuse`、`takeover` 或 `new` 就保持待决，不静默重复创建。当前参考实现是 transport-neutral 的状态机和宿主适配器合同；没有真实跨会话创建、发送、唤醒和恢复接口时只返回 `capability_gap`，不声称完成了 Codex 多会话绑定。
+
+Codex app-server 的真实边界已经单独验证：当前桌面连接只提供私有 stdio，未显式报告共享 unix/ws/websocket 端点时，桌面跨会话编排返回 `capability_gap`。持久线程可从 `thread/read` 回读；`ephemeral=true` 临时线程不支持 turns 回读，只能在当前连接接收 `item/*`、`turn/*` 通知，宿主重启后结果必须进入 `unknown` 恢复核对。可用 `python skills/project-agent-orchestrator/scripts/live_app_server_smoke.py` 重跑有限的真实协议 smoke；它不会把模拟 transport 测试当作服务端兼容证明。
+
+清理旧项目后重新开始时，使用 PAO 的 fresh-start 路径：宿主会先确认项目任务已经终态，按子会话、职责会话、旧总指挥的顺序清理，再绑定新的总指挥；这条路径不等待旧代理 ACK，也不会把旧交接协议变成启动阻塞。`LiveHostAdapter.local()` 会按需启动独立 app-server；启动失败会在有界超时内返回 `app_server_unavailable`，不会无限等待。
 
 ## 组合信封
 
@@ -111,6 +119,10 @@ Set-Location codex-governance-skills
 ```
 
 ```text
+按项目计划建立一个总指挥会话；需要长期独立职责时复用、接管或新建职责型主会话，需要一次性分析时使用内部子代理。所有结果通过结构化回调返回，并在验收门禁通过后继续下一步。
+```
+
+```text
 三堂会审：审查这次跨模块迁移，保留竞争判断，最后只报告证据缺口和下一步检查。
 ```
 
@@ -123,7 +135,7 @@ Set-Location codex-governance-skills
 .\scripts\install.ps1 -TargetSkillsRoot (Join-Path $env:TEMP 'codex-skills-smoke')
 ```
 
-验证脚本会运行合集合同测试、三套内嵌 Python 测试、human-centered guard 的 PowerShell 回归测试，以及本机可用时的全部 `quick_validate.py`。仓库合同还检查 Git 路径分隔符和待发布文本 blob 的 UTF-8/LF 规范，防止首次远端提交的问题回归。
+验证脚本会运行合集合同测试、各 Skill 的内嵌 Python 测试、`project-agent-orchestrator` 的宿主适配器回归、human-centered guard 的 PowerShell 回归测试，以及本机可用时的全部 `quick_validate.py`。仓库合同还检查 Git 路径分隔符和待发布文本 blob 的 UTF-8/LF 规范，防止首次远端提交的问题回归。
 
 验证还包含 Guard 的 Python Replay/离线 Schema 回归和真实示例输入输出契约。运行 `python -X utf8 skills/human-centered-reasoning-guard/validate_package.py` 可单独核对新增资源与示例。程序验证证明本地工具与合同可用；真实任务中的用户收益仍需独立验收。
 
@@ -140,4 +152,4 @@ Set-Location codex-governance-skills
 - `human-centered-reasoning-guard`: `ba665fc4fb0ab4ae96bcb889434a5b42ccee4e3e`
 - `deliberate-project`: `b167dce30a46ff50bd321b69df52d9b37cf041c6`
 
-四个入口保留各自的组合合同；`deliberate-project` 的仓库级测试和夹具已适配到合集目录。后续变更只在本合集维护。
+第五个治理入口 `project-agent-orchestrator` 为本合集原生实现；其来源、宿主边界和修复后的协调/投递/回执能力见 `docs/source-manifest.json` 与 [组合说明](docs/composition.md)。五个治理入口保留各自的组合合同；`deliberate-project` 的仓库级测试和夹具、`project-agent-orchestrator` 的宿主适配器测试已适配到合集目录。后续变更只在本合集维护。

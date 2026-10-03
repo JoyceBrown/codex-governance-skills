@@ -18,9 +18,17 @@ EXPECTED = {
     "architecture-health",
     "capability-director",
     "execution-reliability",
+    "project-agent-orchestrator",
 }
 COLLECTION_REPOSITORY = "https://github.com/JoyceBrown/codex-governance-skills"
-MATURE = {
+GOVERNANCE = {
+    "bootstrap-codex-project",
+    "durable-context",
+    "human-centered-reasoning-guard",
+    "deliberate-project",
+    "project-agent-orchestrator",
+}
+LEGACY_IMPORTED = {
     "bootstrap-codex-project",
     "durable-context",
     "human-centered-reasoning-guard",
@@ -40,7 +48,7 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             self.assertRegex(skill, r"(?m)^description:\s*.+$")
 
     def test_composition_contracts_are_present(self):
-        for name in MATURE:
+        for name in GOVERNANCE:
             skill = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("Composition Contract", skill)
         composition = (ROOT / "docs" / "composition.md").read_text(encoding="utf-8")
@@ -63,9 +71,11 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertEqual(manifest["authority"]["repository"], COLLECTION_REPOSITORY)
         records = {record["skill"]: record for record in manifest["skills"]}
         legacy_records = {name: record for name, record in records.items() if "legacy_import" in record}
-        self.assertEqual(set(legacy_records), MATURE)
+        self.assertEqual(set(legacy_records), LEGACY_IMPORTED)
         self.assertIn("execution-reliability", records)
         self.assertEqual(records["execution-reliability"].get("origin"), "collection-native")
+        self.assertIn("project-agent-orchestrator", records)
+        self.assertEqual(records["project-agent-orchestrator"].get("origin"), "collection-native")
         for name, record in legacy_records.items():
             self.assertEqual(record["authority_repository"], COLLECTION_REPOSITORY)
             self.assertEqual(record["source_path"], f"skills/{name}")
@@ -98,6 +108,14 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
                 / "human-centered-reasoning-guard"
                 / "scripts"
                 / "run-regression-tests.ps1"
+            ).is_file()
+        )
+        self.assertTrue(
+            (
+                SKILLS
+                / "project-agent-orchestrator"
+                / "scripts"
+                / "test_host_adapter.py"
             ).is_file()
         )
 

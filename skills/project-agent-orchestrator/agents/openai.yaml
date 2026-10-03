@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Agent Orchestrator"
+  short_description: "Route project agents with structured callbacks"
+  default_prompt: "Use $project-agent-orchestrator to route project tasks with explicit callback provenance and host delivery receipts."

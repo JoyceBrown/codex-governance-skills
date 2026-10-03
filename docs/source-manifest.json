@@ -1,6 +1,6 @@
 {
   "schema": "codex-governance-skills-source-manifest-v3",
-  "generated_at": "2026-09-18",
+  "generated_at": "2026-10-02",
   "authority": {
     "repository": "https://github.com/JoyceBrown/codex-governance-skills",
     "branch": "main",
@@ -79,6 +79,20 @@
       "collection_changes": [
         "bounded execution preflight and artifact verification",
         "one-retry guard and short receipt renderer"
+      ]
+    },
+    {
+      "skill": "project-agent-orchestrator",
+      "source_path": "skills/project-agent-orchestrator",
+      "authority_repository": "https://github.com/JoyceBrown/codex-governance-skills",
+      "origin": "collection-native",
+      "collection_changes": [
+        "durable commander and role-session routing with reuse/takeover/new resolution",
+        "bounded internal-child and host transport coordination profiles",
+        "atomic dispatch, dependency barriers, callback provenance and acceptance gates",
+        "host delivery, wake and cleanup capability boundaries with explicit capability gaps",
+        "live app-server smoke verification, ephemeral notification result recovery, and fail-closed checkpoint acknowledgement",
+        "bounded fresh-start commander reset and retire-and-recreate role lifecycle"
       ]
     }
   ],

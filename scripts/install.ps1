@@ -20,7 +20,8 @@ $known = @(
     'tdd-loop',
     'architecture-health',
     'capability-director',
-    'execution-reliability'
+    'execution-reliability',
+    'project-agent-orchestrator'
 )
 
 if ([string]::IsNullOrWhiteSpace($TargetSkillsRoot)) {
