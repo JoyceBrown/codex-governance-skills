@@ -146,7 +146,7 @@ class AppServerBridgeTests(unittest.TestCase):
         def which(value: str) -> str | None:
             return {
                 "codex.exe": r"C:\OpenAI\Codex\codex.exe",
-                "codex": r"C:\Users\JIE\AppData\Roaming\npm\codex.cmd",
+                "codex": r"C:\Tools\npm\codex.cmd",
             }.get(value)
 
         with patch("app_server_bridge.shutil.which", side_effect=which):
