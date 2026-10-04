@@ -2,6 +2,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+# Enforce the repository's release metadata rule for both committed and
+# working-tree changes. CI supplies its base/head through the GitHub event;
+# local runs also inspect staged and unstaged files.
+$releaseMetadataValidator = Join-Path $root 'scripts\validate-release-metadata.py'
+python -X utf8 $releaseMetadataValidator --include-worktree
+if ($LASTEXITCODE -ne 0) { throw 'Release metadata validation failed.' }
+
 # Validate published examples against the same contracts used by callers.
 # Composition envelopes have a closed schema; other examples use the shared
 # artifact-v1 envelope. This keeps examples useful without pretending that one
@@ -9,7 +16,8 @@ $root = Split-Path -Parent $PSScriptRoot
 $artifactValidator = Join-Path $root 'scripts\validate-artifacts.py'
 $compositionValidator = Join-Path $root 'scripts\validate-composition.py'
 foreach ($example in Get-ChildItem -LiteralPath (Join-Path $root 'examples') -Recurse -Filter '*.json' -File) {
-    if ($example.FullName -like '*\examples\composition\valid-envelope.json') {
+    $document = Get-Content -LiteralPath $example.FullName -Raw | ConvertFrom-Json
+    if ($document.PSObject.Properties.Name -contains 'schema_version' -and $document.schema_version -eq 'composition-v1') {
         python -X utf8 $compositionValidator $example.FullName
     } else {
         python -X utf8 $artifactValidator $example.FullName

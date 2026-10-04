@@ -38,13 +38,15 @@
 代码/测试变更         -> tdd-loop
 结构、依赖或容量疑问 -> architecture-health
 执行、构建、安装、进程或 UI 易出错 -> execution-reliability
-写入、外部副作用或完成声明 -> human-centered-reasoning-guard
+高风险写入、外部副作用或完成声明 -> human-centered-reasoning-guard
 项目长任务直接执行和恢复       -> project-agent-orchestrator
 能力明显错配         -> capability-director（只读候选诊断）
 用户明确“三堂会审”   -> deliberate-project（显式、只读）
 ```
 
 `human-centered-reasoning-guard` 可以在执行前、执行中和完成前重复作为门禁；它不是最后一道流水线步骤。`bootstrap-codex-project`、`durable-context`、`deliberate-project` 和 `project-agent-orchestrator` 都有自己的触发边界，缺少对应信号时不应强行加入流程。
+
+普通的、已授权的代码修改直接走 `tdd-loop`；未分类的写入仍保留 Guard 保护，高风险写入使用 `consequential_write`、`destructive_write`、`irreversible_action` 或 `scope_change` 信号。深度规划与完整架构讨论在体系外完成，接收边界见 [深度规划边界](docs/out-of-scope/deep-planning-dialogue.md)。
 
 Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理和零 LLM Cognitive Replay。唯一入口仍为 `human-centered-reasoning-guard`，原事实门、目标门、身份、回滚、完成验证和单账本桥接继续负责原有边界。深层认知按事件触发；Replay 只读取经授权的经验投影，筛选项目、环境、约束和有效性后输出历史候选，不能批准执行或写成当前事实。缺少结构化历史时正常回到当前证据，不要求安装宿主、Hook 或数据库。来源、修复和功能映射见 [接入说明](docs/hcr-6.2-integration.md)。
 
@@ -60,7 +62,7 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 
 组合信封字段合同见 [composition.schema.json](docs/composition.schema.json)。可用 `python scripts/validate-composition.py envelope.json` 或把 JSON 通过标准输入传入，检查字段、预算、父子链、循环、生命周期和 Guard 阻断继承；它是边界校验器，不是技能运行时或第二任务系统。
 
-跨技能收据、对齐卡和检查点的公共形状见 [artifact.schema.json](schemas/artifact.schema.json)，可用 `python scripts/validate-artifacts.py` 做结构预检。它不替代各治理技能的事实门、授权门或用户路径验收。
+跨技能收据、对齐卡和检查点的公共形状见 [artifact.schema.json](schemas/artifact.schema.json)，可用 `python scripts/validate-artifacts.py` 做结构预检。artifact-v1 只校验公共外壳；`status` 及其他领域状态由产生它的 Skill 自己定义，不能把公共收据校验器当成万能状态协议。它不替代各治理技能的事实门、授权门或用户路径验收。
 
 仓库级检查的输入、通过条件和真实宿主限制见 [评估协议](docs/evaluation-protocol.md)。
 

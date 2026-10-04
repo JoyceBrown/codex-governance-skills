@@ -13,5 +13,5 @@
     "budget": {"type": "object", "required": ["chars", "calls", "depth"], "additionalProperties": false,
       "properties": {"chars": {"type": "integer", "minimum": 0}, "calls": {"type": "integer", "minimum": 0}, "depth": {"type": "integer", "minimum": 0}, "spent_chars": {"type": "integer", "minimum": 0}, "spent_calls": {"type": "integer", "minimum": 0}}}
   },
-  "allOf": [{"if": {"properties": {"artifact_kind": {"const": "receipt"}}}, "then": {"required": ["status", "run_mode"], "properties": {"status": {"enum": ["completed", "in_progress", "failed", "blocked", "unknown", "partial", "COMPLETED", "IN_PROGRESS", "FAILED", "BLOCKED", "UNKNOWN", "PARTIAL", "PASS", "ISSUE", "OPEN"]}, "run_mode": {"enum": ["standalone", "composed", "pao", "pao_develop", "non_pao"]}}}}]
+  "allOf": [{"if": {"properties": {"artifact_kind": {"const": "receipt"}}}, "then": {"required": ["status", "run_mode"], "properties": {"status": {"type": "string", "minLength": 1, "maxLength": 64}, "run_mode": {"enum": ["standalone", "composed", "pao", "pao_develop", "non_pao"]}}}}]
 }

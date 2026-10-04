@@ -39,6 +39,10 @@ BOOLEAN_FIELDS = {
     "capability_mismatch",
     "continuous_development",
     "write",
+    "consequential_write",
+    "destructive_write",
+    "irreversible_action",
+    "scope_change",
     "external_side_effect",
     "consequential_claim",
     "explicit_deliberation",
@@ -85,6 +89,10 @@ def _normalise_signals(request: dict[str, Any]) -> set[str]:
         ("capability_mismatch", "capability_mismatch"),
         ("continuous_development", "continuous_development"),
         ("write", "write"),
+        ("consequential_write", "consequential_write"),
+        ("destructive_write", "destructive_write"),
+        ("irreversible_action", "irreversible_action"),
+        ("scope_change", "scope_change"),
         ("external_side_effect", "external_side_effect"),
         ("consequential_claim", "consequential_claim"),
         ("explicit_deliberation", "explicit_deliberation"),
@@ -118,6 +126,16 @@ def _choose_primary(request: dict[str, Any], signals: set[str], known: dict[str,
     for matches, skill, reason in priorities:
         if signals & matches:
             return skill, [reason]
+    if signals & {
+        "write",
+        "consequential_write",
+        "destructive_write",
+        "irreversible_action",
+        "scope_change",
+        "external_side_effect",
+        "consequential_claim",
+    }:
+        return "human-centered-reasoning-guard", ["authorization or completion guard signal"]
     return None, ["no primary routing signal was provided"]
 
 
@@ -136,11 +154,21 @@ def route(request: dict[str, Any]) -> dict[str, Any]:
             "degradation": "standalone",
             "budget": {"chars": 3000, "calls": 0, "depth": 0},
         }
-    # A write, external side effect, or consequential completion claim always
-    # passes through the Guard.  Keep the originally requested skill visible so
-    # a caller can delegate after the gate instead of silently bypassing it.
+    # High-risk writes, external side effects, or consequential completion
+    # claims pass through the Guard. An unclassified write remains guarded;
+    # an explicitly authorized code change may use TDD directly so routine
+    # edits do not pay the full guard route.
     gated_primary = None
-    guard_signals = {"write", "external_side_effect", "consequential_claim"}
+    guard_signals = {
+        "consequential_write",
+        "destructive_write",
+        "irreversible_action",
+        "scope_change",
+        "external_side_effect",
+        "consequential_claim",
+    }
+    if "write" in signals and "authorized_code_change" not in signals:
+        guard_signals.add("write")
     if signals & guard_signals and primary != "human-centered-reasoning-guard":
         gated_primary = primary
         primary = "human-centered-reasoning-guard"

@@ -39,11 +39,33 @@ class CompositionRouteTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             router.route({"explicit_skill": "not-a-skill"})
 
-    def test_write_is_gated_even_when_code_skill_is_explicit(self):
+    def test_unclassified_write_is_gated_even_when_code_skill_is_explicit(self):
+        result = router.route({
+            "explicit_skill": "tdd-loop",
+            "write": True,
+        })
+        self.assertEqual(result["primary_skill"], "human-centered-reasoning-guard")
+        self.assertEqual(result["gated_primary_skill"], "tdd-loop")
+
+    def test_guard_signal_without_another_primary_routes_to_guard(self):
+        result = router.route({"write": True})
+        self.assertEqual(result["primary_skill"], "human-centered-reasoning-guard")
+        self.assertNotIn("gated_primary_skill", result)
+
+    def test_authorized_routine_code_change_can_use_tdd_without_guard_gate(self):
         result = router.route({
             "explicit_skill": "tdd-loop",
             "authorized_code_change": True,
             "write": True,
+        })
+        self.assertEqual(result["primary_skill"], "tdd-loop")
+        self.assertNotIn("gate", result)
+
+    def test_consequential_write_is_gated(self):
+        result = router.route({
+            "explicit_skill": "tdd-loop",
+            "authorized_code_change": True,
+            "consequential_write": True,
         })
         self.assertEqual(result["primary_skill"], "human-centered-reasoning-guard")
         self.assertEqual(result["gated_primary_skill"], "tdd-loop")

@@ -276,4 +276,4 @@ For a requested full audit report, expand the same record into scope and portfol
 - Read `references/finding-judgment-model.md` before normalizing findings, cross-expanding, or synthesizing the judgment map.
 - Read `references/optional-adjudication.md` only when the user explicitly asks the inquiry to choose, recommend, prioritize, or decide.
 - Read the snapshot-equivalence section of `references/project-authority-routing.md` for current-state and delta boundaries; read its authority sections when conclusions need a durable owner, project planning artifacts have ambiguous authority, or requirement impact and execution authority must be kept separate.
-- Read `references/experience-governance.md` before reading from or writing to the governed experience catalog.
+- Read `references/experience-governance.md` for catalog operations; read `references/code-review-routing.md` for code-review subtypes.

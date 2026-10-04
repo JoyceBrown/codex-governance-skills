@@ -14,18 +14,6 @@ class ArtifactValidationError(ValueError):
     pass
 
 
-STATUS_VALUES = {
-    "FOUND", "PARTIAL", "NOT_FOUND", "CONFLICTED", "BLOCKED_UNCERTAINTY",
-    "READY", "WARN", "BLOCKED",
-    "PASS", "ISSUE", "ABSTAIN", "OPEN",
-    "IN_PROGRESS", "COMPLETED", "FAILED", "UNKNOWN",
-    "completed", "in_progress", "failed", "blocked", "unknown", "partial", "stale",
-}
-RECEIPT_STATUSES = {
-    "completed", "in_progress", "failed", "blocked", "unknown", "partial", "stale",
-    "COMPLETED", "IN_PROGRESS", "FAILED", "BLOCKED", "UNKNOWN", "PARTIAL",
-    "PASS", "ISSUE", "OPEN",
-}
 REQUIRED_COMMON = {"artifact_kind", "schema_version", "evidence_refs", "next_action", "budget"}
 KIND_REQUIRED = {
     "receipt": {"status", "run_mode"},
@@ -63,13 +51,9 @@ def validate_artifact(value: dict[str, Any]) -> dict[str, Any]:
     for key in ("spent_chars", "spent_calls"):
         if key in budget and (not isinstance(budget[key], int) or budget[key] < 0 or budget[key] > budget[key.replace("spent_", "")]):
             raise ArtifactValidationError(f"budget.{key} exceeds its allowance")
-    for field in ("recovery_status", "intent_status", "action_status", "review_status", "execution_status"):
-        if field in value and value[field] not in STATUS_VALUES:
-            raise ArtifactValidationError(f"invalid {field}")
-    if kind == "receipt" and value["status"] in {"COMPLETED", "completed", "PASS"} and not refs:
-        raise ArtifactValidationError("completed or passing receipts require evidence_refs")
-    if kind == "receipt" and value["status"] not in RECEIPT_STATUSES:
-        raise ArtifactValidationError("receipt.status is not a supported status")
+    for field in ("status", "recovery_status", "intent_status", "action_status", "review_status", "execution_status"):
+        if field in value and (not isinstance(value[field], str) or not value[field].strip() or len(value[field]) > 64):
+            raise ArtifactValidationError(f"{field} must be a bounded non-empty string")
     if kind == "receipt" and value["run_mode"] not in {"standalone", "composed", "pao", "pao_develop", "non_pao"}:
         raise ArtifactValidationError("receipt.run_mode is not a supported mode")
     return value

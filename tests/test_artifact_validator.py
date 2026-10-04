@@ -27,9 +27,13 @@ class ArtifactValidatorTests(unittest.TestCase):
     def test_pao_lowercase_receipt_status_is_accepted(self):
         self.assertEqual(validator.validate_artifact(artifact(status="completed"))["status"], "completed")
 
-    def test_completed_receipt_needs_evidence(self):
+    def test_receipt_status_is_skill_owned_and_bounded(self):
+        value = artifact(status="domain-specific:accepted")
+        self.assertEqual(validator.validate_artifact(value)["status"], "domain-specific:accepted")
         with self.assertRaises(validator.ArtifactValidationError):
-            validator.validate_artifact(artifact(evidence_refs=[]))
+            validator.validate_artifact(artifact(status=" "))
+        with self.assertRaises(validator.ArtifactValidationError):
+            validator.validate_artifact(artifact(status="x" * 65))
 
     def test_checkpoint_requires_recovery_status(self):
         with self.assertRaises(validator.ArtifactValidationError):

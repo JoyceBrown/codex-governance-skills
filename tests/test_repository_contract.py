@@ -132,12 +132,15 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "scripts" / "route-composition.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_route_composition.py").is_file())
         self.assertTrue((ROOT / "scripts" / "validate-artifacts.py").is_file())
+        self.assertTrue((ROOT / "scripts" / "validate-release-metadata.py").is_file())
         self.assertTrue((ROOT / "schemas" / "artifact.schema.json").is_file())
 
     def test_published_examples_are_connected_to_repository_gate(self):
         gate = (ROOT / "scripts" / "validate-repository.ps1").read_text(encoding="utf-8")
         self.assertIn("validate-artifacts.py", gate)
         self.assertIn("validate-composition.py", gate)
+        self.assertIn("ConvertFrom-Json", gate)
+        self.assertNotIn("-like '*\\examples\\composition\\valid-envelope.json'", gate)
         examples = list((ROOT / "examples").rglob("*.json"))
         self.assertGreaterEqual(len(examples), 11)
 
@@ -148,6 +151,7 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             ROOT / "docs" / "adr" / "0003-atomic-skills-stay-lightweight.md",
             ROOT / "docs" / "glossary.md",
             ROOT / "docs" / "out-of-scope" / "security-review.md",
+            ROOT / "docs" / "out-of-scope" / "deep-planning-dialogue.md",
             ROOT / "CHANGELOG.md",
         ):
             self.assertTrue(path.is_file(), path)
@@ -183,6 +187,14 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         ):
             self.assertIn(marker, composition)
         self.assertIn("recovery-status.md", composition)
+
+    def test_artifact_status_is_not_a_shared_domain_enum(self):
+        schema = json.loads((ROOT / "schemas" / "artifact.schema.json").read_text(encoding="utf-8"))
+        status = schema["allOf"][0]["then"]["properties"]["status"]
+        self.assertEqual(status["type"], "string")
+        self.assertNotIn("enum", status)
+        artifact_validator = (ROOT / "scripts" / "validate-artifacts.py").read_text(encoding="utf-8")
+        self.assertNotIn("RECEIPT_STATUSES", artifact_validator)
 
     def test_recovery_status_has_one_semantic_source(self):
         canonical = SKILLS / "durable-context" / "references" / "recovery-status.md"
