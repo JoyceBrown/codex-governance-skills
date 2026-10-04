@@ -71,7 +71,7 @@ Reject a checkpoint when the current requirements hash has no matching recorded 
 
 Enforce the requested resume character budget. Include only compact change metadata in the active prompt; keep full before/after requirement snapshots on disk and in explicit historical retrieval.
 
-Use bounded recovery tiers: current ledger first, verified project indexes second, and explicit relevant history last. Return `FOUND`, `PARTIAL`, `NOT_FOUND`, `CONFLICTED`, or `BLOCKED_UNCERTAINTY` with searched scope, budget, blocking state, and next action. Use `LIKELY_LOST` only after an explicit audit proves the authoritative record is unavailable; an empty search is only `NOT_FOUND`. Never recursively launch another recovery agent or broaden retrieval after its fixed stop point.
+Use bounded recovery tiers: current ledger first, verified project indexes second, and explicit relevant history last. Return the states and follow the stop rules in [recovery-status.md](references/recovery-status.md), with searched scope, budget, blocking state, and next action. Never recursively launch another recovery agent or broaden retrieval after its fixed stop point.
 
 Before repeating research, check compact Research Receipts in `findings.md`. Reuse a current receipt with the same question and scope, locally recheck an expired receipt, and stop automatic selection on a conflicted receipt. Keep only receipt metadata and source references; do not copy full research or chat history into the ledger.
 
@@ -114,7 +114,7 @@ This Skill is independently usable and remains the only authority for the projec
 - `human-centered-reasoning-guard` may require a task card, fact gate, or rebaseline. Honor that boundary; lifecycle recovery does not grant permission to bypass it.
 - `deliberate-project` may provide read-only finding IDs. Preserve `Open`, `Contested`, and `Coverage-limited` states instead of converting them into decisions.
 
-If an integration is unavailable, return the normal standalone recovery status (`FOUND`, `PARTIAL`, `NOT_FOUND`, `CONFLICTED`, or `BLOCKED_UNCERTAINTY`) with its bounded next action. Do not launch a replacement memory service or recursive recovery agent.
+If an integration is unavailable, return the normal standalone recovery status defined in [recovery-status.md](references/recovery-status.md) with its bounded next action. Do not launch a replacement memory service or recursive recovery agent.
 
 The standalone fallback reads the project card, requirements, recent changes, and current workspace itself. A missing collaborator may reduce evidence to `PARTIAL` or `NOT_FOUND`, but it never justifies a second ledger or an unbounded wait.
 

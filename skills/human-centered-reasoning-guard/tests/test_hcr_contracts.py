@@ -130,6 +130,16 @@ class HcrContractTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         validate({}, "hcr-test.schema.json")
 
+    def test_internal_modules_cannot_take_gate_ownership(self):
+        boundaries = (ROOT / "references" / "module-boundaries.md").read_text(encoding="utf-8")
+        self.assertIn("gate-core", boundaries)
+        self.assertIn("replay", boundaries)
+        self.assertIn("Must not do", boundaries)
+        self.assertIn("second ledger", boundaries)
+        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Replay cannot grant permission", skill)
+        self.assertIn("module-boundaries.md", skill)
+
     def test_standard_jsonschema_agrees_when_available_without_remote_resolution(self):
         try:
             from jsonschema import Draft202012Validator, FormatChecker

@@ -31,6 +31,27 @@ next_action: 一个最小可执行动作
 
 用户明确说出的目标可以是 `DECIDED`；模型推断只能是 `ASSUMED`。冲突不靠投票解决，标为 `CONFLICTED` 并指出需要谁决定。
 
+## Output Contract
+
+对齐卡使用以下稳定字段；它只压缩意图，不增加用户未授予的范围：
+
+```json
+{
+  "goal": "用户真正要完成的事情",
+  "visible_success": "用户最后能看到或做到什么",
+  "scope": [],
+  "non_goals": [],
+  "constraints": [],
+  "intent_status": "DECIDED | ASSUMED | OPEN | CONFLICTED",
+  "unknowns": [],
+  "evidence_refs": [],
+  "next_action": "一个最小澄清动作或 null",
+  "budget": {"chars": 0, "calls": 0}
+}
+```
+
+`ASSUMED`、`OPEN` 和 `CONFLICTED` 必须在 `unknowns` 或冲突说明中留下可见依据；对齐卡不能成为计划、授权或完成收据。
+
 ## 边界
 
 只读分析，不修改代码、计划、账本、配置或外部系统。将结果交给 Bootstrap、Durable 或 Guard 时只传字段和证据引用，不传原始聊天。没有足够信息时提出最多三个真正会改变结果的问题，否则采用可逆假设并标明。

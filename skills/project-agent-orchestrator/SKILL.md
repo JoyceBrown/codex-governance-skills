@@ -68,13 +68,7 @@ PAO 默认关闭。只有用户明确输入以下任一指令才开启：
 
 ## 中断恢复和有界恢复层级
 
-恢复时先读取 `PLANS.md`、当前检查点、最近收据、当前代码和工作区状态，不等待已经丢失的聊天，不重放结果不明的副作用。恢复结果只能使用以下状态：
-
-- `FOUND`：权威计划、当前切片和验证证据一致，可以继续。
-- `PARTIAL`：部分检查点或证据缺失；只做一次定向补查，完成可证明安全的切片后重新收口。
-- `NOT_FOUND`：找不到权威记录；停在恢复点，不凭聊天记忆推断任务或结果。
-- `CONFLICTED`：计划、代码、收据或用户要求互相冲突；先标出冲突并以最新用户指令和当前文件对账。
-- `BLOCKED_UNCERTAINTY`：外部写入、命令结果或进程状态不确定；先检查权威外部状态，不自动重试。
+恢复时先读取 `PLANS.md`、当前检查点、最近收据、当前代码和工作区状态，不等待已经丢失的聊天，不重放结果不明的副作用。恢复状态和停止规则沿用 [durable-context 的唯一词汇表](../durable-context/references/recovery-status.md)，PAO 不另立语义。
 
 固定停止点：一次定向恢复补查、一次外部状态核验、同一修复最多两轮。达到停止点仍不能确认时，保留原始数据和收据，标记 `failed`、`unknown`、`stale`、`lagging` 或 `rebuild_required`，停止扩大影响。
 
@@ -83,7 +77,7 @@ PAO 默认关闭。只有用户明确输入以下任一指令才开启：
 本 Skill 的组合消息遵循 `composition-v1`（见 `docs/composition.schema.json`）；独立运行时 `source_skill` 与 `target_skill` 相同、`degradation=standalone`。其 PAO 收据中的 `status`、`run_mode` 是本 Skill 内部输出，映射到组合信封时必须分别填入 `execution_status`、`action_status` 和 `degradation`，不能用一个通用 `status` 代替多个状态域。
 
 - `bootstrap-codex-project` 负责项目文件、计划权威和 `on_complete`。
-- `durable-context` 负责跨会话检查点和恢复账本；恢复状态词汇沿用其 `FOUND`、`PARTIAL`、`NOT_FOUND`、`CONFLICTED`、`BLOCKED_UNCERTAINTY` 定义，本 Skill 不另立一套恢复语义，也不建立第二个账本。
+- `durable-context` 负责跨会话检查点和恢复账本，并维护 [唯一恢复状态词汇表](../durable-context/references/recovery-status.md)；PAO 只消费这些状态，不另立语义，也不建立第二个账本。
 - `human-centered-reasoning-guard` 负责目标、身份、证据和完成声明门禁。
 - `execution-reliability` 负责 Windows、Git、进程和有限重试核验。
 - `tdd-loop` 负责代码测试闭环；本 Skill 负责把测试接入开发队列和阶段推进。

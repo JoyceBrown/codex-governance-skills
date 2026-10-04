@@ -20,7 +20,7 @@
 | 原子 | `capability-director` | 判断能力错配，比较有限候选并输出薄 Receipt | 只读；不安装、不启用、不执行陌生能力 |
 | 原子 | `execution-reliability` | 执行环境、目标、产物、进程和有限重试核验 | 无全局 Hook；普通任务 fail-open，高风险动作才阻断 |
 
-前四个成熟 Skill 首次从各自公开仓库的已核验 `main` 版本导入；`project-agent-orchestrator` 是本合集原生维护的第五个治理 Skill。导入或创建完成后，本合集的 `main` 和 `skills/<name>` 是唯一长期维护权威。旧仓完整历史保存在本合集的 `legacy/<skill>/main` 标签中，`docs/source-manifest.json` 同时记录原 URL、提交和归档引用，旧 URL 不再作为上游。本仓库不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前不附带许可证，因为许可证选择需要用户明确决定。
+前四个成熟 Skill 首次从各自公开仓库的已核验 `main` 版本导入；`project-agent-orchestrator` 是本合集原生维护的第五个治理 Skill。导入或创建完成后，本合集的 `main` 和 `skills/<name>` 是唯一长期维护权威。旧仓完整历史保存在本合集的 `legacy/<skill>/main` 标签中，`docs/source-manifest.json` 同时记录原 URL、提交和归档引用，旧 URL 不再作为上游。本仓库不包含项目账本、Hook 日志、凭据、聊天记录、运行时缓存或用户项目源码。当前维护内容采用 MIT License，适用范围和历史/用户提供材料的边界见 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。
 
 ## 怎么组合
 
@@ -57,6 +57,8 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 体系级组合规则见 [组合协议](docs/composition.md)，机器可读的能力、权责、可选协作者和独立回退见 [技能能力清单](docs/skill-capability-registry.json)。每个技能的必需依赖为空；技能只有在当前任务需要时才借用其他技能，缺少协作者时必须回退到独立流程或明确报告能力缺口。
 
 组合信封字段合同见 [composition.schema.json](docs/composition.schema.json)。可用 `python scripts/validate-composition.py envelope.json` 或把 JSON 通过标准输入传入，检查字段、预算、父子链、循环、生命周期和 Guard 阻断继承；它是边界校验器，不是技能运行时或第二任务系统。
+
+仓库级检查的输入、通过条件和真实宿主限制见 [评估协议](docs/evaluation-protocol.md)。
 
 ## 组合协议入口
 

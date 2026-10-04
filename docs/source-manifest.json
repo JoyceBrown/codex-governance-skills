@@ -1,6 +1,6 @@
 {
   "schema": "codex-governance-skills-source-manifest-v3",
-  "generated_at": "2026-10-02",
+  "generated_at": "2026-10-04",
   "authority": {
     "repository": "https://github.com/JoyceBrown/codex-governance-skills",
     "branch": "main",
@@ -29,7 +29,8 @@
       },
       "collection_changes": [
         "read-only skill collection auditor",
-        "auditor fixture and regression tests"
+        "auditor fixture and regression tests",
+        "canonical recovery status vocabulary and drift regression"
       ]
     },
     {
@@ -45,7 +46,8 @@
         "bounded composition contract",
         "PowerShell Core-compatible read-only experience retrieval fallback",
         "HCR 6.2 cognitive mode integrated under the existing Guard authority",
-        "bounded scope-safe replay, offline schemas, and adversarial regressions"
+        "bounded scope-safe replay, offline schemas, and adversarial regressions",
+        "explicit internal module boundaries for gate, replay, experience, and ledger bridge"
       ],
       "package_import": {
         "artifact": "human-centered-reasoning-v6.2.0.zip",

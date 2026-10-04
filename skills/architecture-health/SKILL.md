@@ -20,6 +20,24 @@ description: 审查软件或自动化系统的边界、依赖、接口、状态�
 
 默认只读。需要实现时把结论交给 Bootstrap 的计划权责、Guard 的门禁和 TDD Loop 的实现闭环。不要新增数据库、常驻 Broker、全局记忆或复杂代理层来掩盖缺少证据。
 
+## Output Contract
+
+每次审查返回一个短的结构化收据；字段必须保持稳定，缺失证据写入 `unknowns`，不以推断代替事实：
+
+```json
+{
+  "review_status": "PASS | ISSUE | OPEN | CONFLICTED",
+  "scope": "审查范围",
+  "boundary_findings": [],
+  "evidence_refs": [],
+  "rollback_risk": "LOW | MEDIUM | HIGH | UNKNOWN",
+  "next_action": "一个最小检查或 null",
+  "budget": {"chars": 0, "calls": 0}
+}
+```
+
+`boundary_findings` 只记录有证据支持的边界问题；`next_action` 不得授权结构性变更，单独使用时不直接重构。该收据可映射到 `composition-v1`，但不取代架构事实或项目计划。
+
 ## 组合与独立运行合同
 
 遵循仓库的 `composition-v1` 信封（见 `docs/composition.md` 和 `docs/composition.schema.json`）。单独使用时只依据当前项目证据输出边界发现、风险和一个最小检查；缺少协作者不阻塞只读审查，缺口标为 `Open`。

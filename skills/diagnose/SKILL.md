@@ -28,6 +28,26 @@ next_action / budget
 
 默认只读。用户明确授权实现时，交给 TDD Loop 或项目原有工程流程；同一假设连续失败两次后切换假设，不重复原命令。
 
+## Output Contract
+
+每次诊断返回稳定的结构化收据，确保竞争假设和区分性检查可复核：
+
+```json
+{
+  "symptom": "用户可见症状",
+  "reproduction": "复现路径或 unknown",
+  "hypotheses": [],
+  "discriminating_check": "一次最便宜的区分性检查",
+  "root_cause": "CONFIRMED | LIKELY | OPEN | CONFLICTED",
+  "user_impact": "影响或 unknown",
+  "evidence_refs": [],
+  "next_action": "一个最小动作或 null",
+  "budget": {"chars": 0, "calls": 0}
+}
+```
+
+`hypotheses` 至少两项且必须互相竞争；没有执行证据时 `root_cause` 只能是 `OPEN` 或 `CONFLICTED`。收据不授权修复。
+
 ## 组合与独立运行合同
 
 遵循 `composition-v1`（见 `docs/composition.md`）。单独使用时至少保留两个竞争假设、一次区分性检查和一个最小下一动作；没有执行证据时保持 `OPEN` 或 `CONFLICTED`，不自动修复。

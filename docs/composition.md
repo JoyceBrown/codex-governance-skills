@@ -71,6 +71,9 @@
 - `execution_status` 只表示当前动作生命周期；
 - `intent_status` 只表示用户意图是否清楚。
 
+`recovery_status` 的含义和停止规则唯一维护在
+[durable-context/references/recovery-status.md](../skills/durable-context/references/recovery-status.md)；本协议和 JSON Schema 只引用允许值，不复制语义。
+
 不同技能不得把这些字段合并成一个自定义状态，也不得把一个领域的 `PASS` 当作另一个领域的 `COMPLETED`。
 
 ## 路由和调用规则

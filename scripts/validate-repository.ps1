@@ -52,4 +52,27 @@ if ($validator -and (Test-Path -LiteralPath $validator)) {
 } else {
     Write-Warning 'skill-creator quick_validate.py is unavailable; repository and embedded tests still ran.'
 }
+
+# Exercise the real installer against an isolated temporary destination. This
+# catches packaging/path regressions without touching the user's Codex skills.
+$smokeRoot = Join-Path ([IO.Path]::GetTempPath()) ('codex-governance-install-smoke-' + [guid]::NewGuid().ToString('N'))
+$smokeTarget = Join-Path $smokeRoot 'skills'
+try {
+    New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
+    $installOutput = & (Join-Path $root 'scripts\install.ps1') -TargetSkillsRoot $smokeTarget -Names @('intent-alignment', 'durable-context')
+    if ($LASTEXITCODE -ne 0) { throw 'Installer smoke test failed.' }
+    foreach ($name in @('intent-alignment', 'durable-context')) {
+        $installedSkill = Join-Path (Join-Path $smokeTarget $name) 'SKILL.md'
+        if (-not (Test-Path -LiteralPath $installedSkill -PathType Leaf)) {
+            throw "Installer smoke test did not install $name."
+        }
+    }
+    if (@(Get-ChildItem -LiteralPath $smokeTarget -Directory).Count -ne 2) {
+        throw 'Installer smoke test installed an unexpected Skill count.'
+    }
+} finally {
+    if (Test-Path -LiteralPath $smokeRoot) {
+        Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 Write-Output 'Integrated repository validation passed.'

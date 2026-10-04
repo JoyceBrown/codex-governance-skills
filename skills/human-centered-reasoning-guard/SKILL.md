@@ -39,6 +39,10 @@ evidence. Replay cannot grant permission, lift a Guard block, write project trut
 or establish completion. The existing experience and continuity owners retain
 their storage and promotion workflows.
 
+Internal responsibilities and prohibited cross-module writes are listed in
+[references/module-boundaries.md](references/module-boundaries.md). This is a
+maintenance boundary within the Guard, not an additional skill or runtime.
+
 ## Activation Tiers
 
 Use the light tier for routine changes: state the real goal, the visible success condition, authorization, and one verification step.

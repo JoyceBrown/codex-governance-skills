@@ -20,6 +20,28 @@ description: 在用户授权的代码变更中，用有界的测试先行、实�
 
 保留 `red`、`green`、`refactor`、测试命令、环境、结果、未覆盖项和下一步。测试失败时保留证据；没有真实用户路径验证时状态只能是 `PARTIAL`。
 
+## Output Contract
+
+每轮测试闭环返回稳定收据；本地通过和真实用户路径结果分开记录：
+
+```json
+{
+  "action_status": "READY | PARTIAL | BLOCKED",
+  "execution_status": "IN_PROGRESS | COMPLETED | FAILED | UNKNOWN",
+  "review_status": "PASS | ISSUE | OPEN",
+  "red": "失败测试或 null",
+  "green": "实现与目标测试或 null",
+  "refactor": "重构结果或 null",
+  "test_evidence": [],
+  "user_path_result": "VERIFIED | PARTIAL | UNKNOWN",
+  "evidence_refs": [],
+  "next_action": "一个最小动作或 null",
+  "budget": {"chars": 0, "calls": 0}
+}
+```
+
+`execution_status=COMPLETED` 不能掩盖 `user_path_result=UNKNOWN`；这时最多将整体结果报告为 `PARTIAL`。
+
 ## 边界
 
 只修改用户授权范围。不得自动提交、推送、部署、迁移、删除或安装陌生依赖。Guard 的事实门禁、回滚要求和完成收据优先于本 Skill 的便利性。

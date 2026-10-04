@@ -21,9 +21,28 @@ description: 当当前任务出现能力错配时，先诊断已有能力，再�
 question / scope / checked_at
 existing_capabilities
 candidates / sources / license_or_trust_notes
-recommendation: use | borrow | fork | install-after-approval | reject
-budget / next_action / expiry
+    recommendation: use | borrow | fork | install-after-approval | reject
+    budget / next_action / expiry
 ```
+
+## Output Contract
+
+对外收据使用稳定字段；候选未核实时保留 `unknown`，不得把发现结果写成已安装能力：
+
+```json
+{
+  "capability_gap": "CONFIRMED | POSSIBLE | NONE | UNKNOWN",
+  "scope": "当前任务范围",
+  "bounded_candidates": [],
+  "recommendation": "use | borrow | fork | install-after-approval | reject",
+  "evidence_refs": [],
+  "next_action": "一个最小只读动作或 null",
+  "budget": {"chars": 0, "calls": 0},
+  "expiry": "ISO-8601 时间或 null"
+}
+```
+
+`bounded_candidates` 最多三个；`recommendation` 永远只是建议，不能越过用户授权、安装器或宿主能力边界。
 
 ## 安全和成本
 

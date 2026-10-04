@@ -1,0 +1,15 @@
+codex-governance-skills notice
+
+The current collection and its maintained original materials are maintained by
+Joyce Brown and are offered under the MIT License in LICENSE. The collection
+repository is the maintenance authority for the files under skills/, docs/,
+scripts/, tests/, and the repository configuration that was created or adapted
+here.
+
+The legacy/ snapshots are archived migration material retained for provenance.
+The historical source repositories did not expose a verifiable license file at
+the time this collection was prepared. This notice does not claim an
+independent upstream license for unmodified historical material; verify the
+applicable rights before redistributing such material outside this collection.
+
+The HCR 6.2 package recorded in docs/source-manifest.json was user-supplied reference input, not a maintenance authority. Its inclusion and adaptation do not change the scope of the MIT grant for the current collection.

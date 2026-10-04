@@ -37,16 +37,11 @@ Each retrieval has a maximum result count, character budget, and history count. 
 
 ## Missing and Conflict States
 
-Use these states in read-only search or recovery reports:
-
-- `FOUND`: the requested evidence is present and verified;
-- `PARTIAL`: only part of the request is supported;
-- `NOT_FOUND`: the bounded scope found no matching evidence;
-- `CONFLICTED`: explicit sources disagree; do not choose by recency alone;
-- `BLOCKED_UNCERTAINTY`: the missing item matters to a high-risk action;
-- `LIKELY_LOST`: use only when an explicit audit proves the authoritative record is unavailable. Never infer it from an empty search.
-
-Low-risk missing details may remain an explicit unknown while work continues. Missing migration, security, permission, ownership, supplier, data-loss, or irreversible-operation facts should block the action and request an exact source or human decision.
+Use the canonical definitions and stop rules in
+[recovery-status.md](recovery-status.md). Low-risk missing details may remain an
+explicit unknown while work continues. Missing migration, security, permission,
+ownership, supplier, data-loss, or irreversible-operation facts should block the
+action and request an exact source or human decision.
 
 ## Research Receipts
 

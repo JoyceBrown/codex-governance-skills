@@ -159,6 +159,41 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             "组合负例",
         ):
             self.assertIn(marker, composition)
+        self.assertIn("recovery-status.md", composition)
+
+    def test_recovery_status_has_one_semantic_source(self):
+        canonical = SKILLS / "durable-context" / "references" / "recovery-status.md"
+        self.assertTrue(canonical.is_file())
+        text = canonical.read_text(encoding="utf-8")
+        for status in ("FOUND", "PARTIAL", "NOT_FOUND", "CONFLICTED", "BLOCKED_UNCERTAINTY"):
+            self.assertIn(f"`{status}`", text)
+        durable = (SKILLS / "durable-context" / "SKILL.md").read_text(encoding="utf-8")
+        pao = (SKILLS / "project-agent-orchestrator" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("recovery-status.md", durable)
+        self.assertIn("recovery-status.md", pao)
+        self.assertIn("不另立语义", pao)
+
+    def test_hcr_internal_boundaries_are_explicit(self):
+        reference = SKILLS / "human-centered-reasoning-guard" / "references" / "module-boundaries.md"
+        self.assertTrue(reference.is_file())
+        text = reference.read_text(encoding="utf-8")
+        for module in ("gate-core", "cognitive-mode", "replay", "experience-store", "ledger-bridge"):
+            self.assertIn(f"`{module}`", text)
+        self.assertIn("not separate", text)
+        skill = (SKILLS / "human-centered-reasoning-guard" / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("module-boundaries.md", skill)
+
+    def test_license_and_notice_declare_scope(self):
+        license_text = (ROOT / "LICENSE").read_text(encoding="utf-8")
+        self.assertIn("MIT License", license_text)
+        self.assertIn("SPDX-License-Identifier: MIT", license_text)
+        self.assertIn("Joyce Brown", license_text)
+        notice = (ROOT / "NOTICE").read_text(encoding="utf-8")
+        self.assertIn("current collection", notice)
+        self.assertIn("user-supplied reference", notice)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("MIT", readme)
+        self.assertIn("NOTICE", readme)
 
     def test_ui_metadata_matches_skill_names(self):
         for name in EXPECTED:
