@@ -1,1 +1,1 @@
-{"case":"单元测试通过但真实用户路径未跑","expected":{"execution_status":"COMPLETED","user_path_result":"UNKNOWN","overall":"PARTIAL"}}
+{"artifact_kind":"receipt","schema_version":"artifact-v1","status":"partial","run_mode":"standalone","evidence_refs":["case:tdd-user-path-unknown"],"next_action":"运行一次安装后的真实用户路径","budget":{"chars":1500,"calls":2,"depth":0},"case":"单元测试通过但真实用户路径未跑","execution_status":"COMPLETED","user_path_result":"UNKNOWN"}

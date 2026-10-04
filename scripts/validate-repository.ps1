@@ -2,13 +2,33 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+# Validate published examples against the same contracts used by callers.
+# Composition envelopes have a closed schema; other examples use the shared
+# artifact-v1 envelope. This keeps examples useful without pretending that one
+# schema owns every local Skill output.
+$artifactValidator = Join-Path $root 'scripts\validate-artifacts.py'
+$compositionValidator = Join-Path $root 'scripts\validate-composition.py'
+foreach ($example in Get-ChildItem -LiteralPath (Join-Path $root 'examples') -Recurse -Filter '*.json' -File) {
+    if ($example.FullName -like '*\examples\composition\valid-envelope.json') {
+        python -X utf8 $compositionValidator $example.FullName
+    } else {
+        python -X utf8 $artifactValidator $example.FullName
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Published example validation failed: $($example.FullName)" }
+}
+
 $testRoots = @(
     (Join-Path $root 'tests'),
     (Join-Path $root 'skills\bootstrap-codex-project\tests'),
     (Join-Path $root 'skills\deliberate-project\tests'),
     (Join-Path $root 'skills\durable-context\tests'),
     (Join-Path $root 'skills\human-centered-reasoning-guard\tests'),
-    (Join-Path $root 'skills\execution-reliability\tests')
+    (Join-Path $root 'skills\execution-reliability\tests'),
+    (Join-Path $root 'skills\intent-alignment\tests'),
+    (Join-Path $root 'skills\diagnose\tests'),
+    (Join-Path $root 'skills\tdd-loop\tests'),
+    (Join-Path $root 'skills\architecture-health\tests'),
+    (Join-Path $root 'skills\capability-director\tests')
 )
 foreach ($testRoot in $testRoots) {
     $testProject = Split-Path -Parent $testRoot

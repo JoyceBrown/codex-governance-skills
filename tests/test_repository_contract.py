@@ -134,6 +134,13 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertTrue((ROOT / "scripts" / "validate-artifacts.py").is_file())
         self.assertTrue((ROOT / "schemas" / "artifact.schema.json").is_file())
 
+    def test_published_examples_are_connected_to_repository_gate(self):
+        gate = (ROOT / "scripts" / "validate-repository.ps1").read_text(encoding="utf-8")
+        self.assertIn("validate-artifacts.py", gate)
+        self.assertIn("validate-composition.py", gate)
+        examples = list((ROOT / "examples").rglob("*.json"))
+        self.assertGreaterEqual(len(examples), 11)
+
     def test_architecture_decisions_and_scope_boundaries_are_published(self):
         for path in (
             ROOT / "docs" / "adr" / "0001-pao-execution-boundary.md",

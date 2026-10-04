@@ -1,6 +1,6 @@
 # 治理案例
 
-这些是最小的正例和反例，用来说明边界，不是运行时事实源，也不代表真实用户收益已经完成评估。
+这些是最小的正例和反例。每个 JSON 都是 `artifact-v1` 收据或组合信封，能够通过对应校验器；它们说明边界，不是运行时事实源，也不代表真实用户收益已经完成评估。
 
 | Skill | 案例 |
 | --- | --- |
@@ -13,4 +13,4 @@
 | `human-centered-reasoning-guard` | [写入路由](hcr/guard-routing.json) |
 | `durable-context` | [陈旧基线](durable-context/stale-baseline.json) |
 | `execution-reliability` | [安装隔离](execution-reliability/install-isolation.json) |
-
+| 组合协议 | [合法组合信封](composition/valid-envelope.json) |

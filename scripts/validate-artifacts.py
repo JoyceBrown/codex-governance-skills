@@ -19,7 +19,12 @@ STATUS_VALUES = {
     "READY", "WARN", "BLOCKED",
     "PASS", "ISSUE", "ABSTAIN", "OPEN",
     "IN_PROGRESS", "COMPLETED", "FAILED", "UNKNOWN",
-    "completed", "in_progress", "failed", "blocked", "unknown", "partial",
+    "completed", "in_progress", "failed", "blocked", "unknown", "partial", "stale",
+}
+RECEIPT_STATUSES = {
+    "completed", "in_progress", "failed", "blocked", "unknown", "partial", "stale",
+    "COMPLETED", "IN_PROGRESS", "FAILED", "BLOCKED", "UNKNOWN", "PARTIAL",
+    "PASS", "ISSUE", "OPEN",
 }
 REQUIRED_COMMON = {"artifact_kind", "schema_version", "evidence_refs", "next_action", "budget"}
 KIND_REQUIRED = {
@@ -63,6 +68,10 @@ def validate_artifact(value: dict[str, Any]) -> dict[str, Any]:
             raise ArtifactValidationError(f"invalid {field}")
     if kind == "receipt" and value["status"] in {"COMPLETED", "completed", "PASS"} and not refs:
         raise ArtifactValidationError("completed or passing receipts require evidence_refs")
+    if kind == "receipt" and value["status"] not in RECEIPT_STATUSES:
+        raise ArtifactValidationError("receipt.status is not a supported status")
+    if kind == "receipt" and value["run_mode"] not in {"standalone", "composed", "pao", "pao_develop", "non_pao"}:
+        raise ArtifactValidationError("receipt.run_mode is not a supported mode")
     return value
 
 

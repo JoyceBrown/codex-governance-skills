@@ -1,4 +1,1 @@
-{
-  "case": "missing checkpoint after interruption",
-  "expected": "recovery_status=PARTIAL or BLOCKED_UNCERTAINTY; do not invent the missing plan state"
-}
+{"artifact_kind":"checkpoint","schema_version":"artifact-v1","evidence_refs":["case:durable-stale-baseline"],"next_action":"重新核对当前计划和检查点","budget":{"chars":1300,"calls":1,"depth":0},"checkpoint_id":"example-checkpoint","task_id":"example-task","recovery_status":"PARTIAL","case":"中断后检查点缺失"}

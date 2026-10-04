@@ -1,1 +1,1 @@
-{"case":"同一命令偶发失败","expected":{"hypotheses":["环境状态变化","输入或代码回归"],"discriminating_check":"先记录一次环境和输入快照","automatic_fix":false}}
+{"artifact_kind":"receipt","schema_version":"artifact-v1","status":"in_progress","run_mode":"standalone","evidence_refs":["case:diagnose-competing-hypotheses"],"next_action":"记录一次环境和输入快照","budget":{"chars":1200,"calls":1,"depth":0},"case":"同一命令偶发失败","hypotheses":["环境状态变化","输入或代码回归"],"discriminating_check":"先记录一次环境和输入快照"}

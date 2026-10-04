@@ -1,4 +1,1 @@
-{
-  "case": "skill source contains __pycache__ or a junction",
-  "expected": "installer rejects or excludes it before touching destinations"
-}
+{"artifact_kind":"receipt","schema_version":"artifact-v1","status":"completed","run_mode":"standalone","evidence_refs":["case:installer-cache-isolation"],"next_action":null,"budget":{"chars":1000,"calls":1,"depth":0},"case":"Skill 来源包含 __pycache__ 或 junction","expected":"安装器在触碰目标目录前排除或拒绝它"}

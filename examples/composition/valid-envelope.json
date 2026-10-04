@@ -1,0 +1,22 @@
+{
+  "schema_version": "composition-v1",
+  "request_id": "example-composition-1",
+  "parent_request_id": null,
+  "source_skill": "diagnose",
+  "target_skill": "diagnose",
+  "scope": "example only",
+  "claim_kind": "observed",
+  "intent_status": "DECIDED",
+  "recovery_status": "FOUND",
+  "action_status": "READY",
+  "review_status": "OPEN",
+  "execution_status": "IN_PROGRESS",
+  "outcome_status": "OPEN",
+  "authority_owner": "root_cause_evidence",
+  "side_effect": "none",
+  "evidence_refs": ["case:composition-valid-envelope"],
+  "next_action": "run one bounded check",
+  "degradation": "standalone",
+  "budget": {"chars": 1000, "calls": 1, "depth": 0},
+  "lifecycle": "running"
+}

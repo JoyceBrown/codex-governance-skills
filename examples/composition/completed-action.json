@@ -1,5 +1,1 @@
-{
-  "case": "action completed but user path unverified",
-  "execution_status": "COMPLETED",
-  "expected": "keep outcome open or partial; do not report the user goal as accepted"
-}
+{"artifact_kind":"receipt","schema_version":"artifact-v1","status":"partial","run_mode":"composed","evidence_refs":["case:composition-outcome-separation"],"next_action":"补跑真实用户路径并记录 outcome_status","budget":{"chars":1500,"calls":2,"depth":1},"case":"动作已执行完但用户路径未验证","execution_status":"COMPLETED","outcome_status":"OPEN"}
