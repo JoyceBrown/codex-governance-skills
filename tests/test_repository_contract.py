@@ -55,6 +55,71 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         for field in ("request_id", "status", "scope", "evidence_refs", "next_action", "budget"):
             self.assertIn(field, composition)
 
+    def test_capability_registry_is_complete_and_standalone(self):
+        registry_path = ROOT / "docs" / "skill-capability-registry.json"
+        registry = json.loads(registry_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            registry["schema"],
+            "codex-governance-skills-capability-registry-v1",
+        )
+        self.assertEqual(registry["composition_protocol"], "composition-v1")
+        self.assertEqual(registry["envelope_schema"], "docs/composition.schema.json")
+        self.assertEqual(registry["validator"], "scripts/validate-composition.py")
+        records = {record["name"]: record for record in registry["skills"]}
+        self.assertEqual(set(records), EXPECTED)
+        required = {
+            "name",
+            "class",
+            "authority_owner",
+            "invocation",
+            "required_dependencies",
+            "optional_collaborators",
+            "outputs",
+            "write_scope",
+            "forbidden_scope",
+            "standalone_fallback",
+        }
+        for name, record in records.items():
+            self.assertTrue(required.issubset(record), name)
+            self.assertEqual(record["required_dependencies"], [], name)
+            self.assertNotIn(name, record["optional_collaborators"], name)
+            self.assertTrue(set(record["optional_collaborators"]).issubset(EXPECTED), name)
+            self.assertTrue(record["standalone_fallback"].strip(), name)
+
+    def test_every_entrypoint_declares_composition_and_standalone_behavior(self):
+        for name in EXPECTED:
+            skill = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+            self.assertIn("composition-v1", skill, name)
+            self.assertRegex(skill, r"(?i)(standalone|独立运行|独立使用|回退)", name)
+            for marker in ("evidence_refs", "next_action", "budget"):
+                self.assertIn(marker, skill, name)
+
+    def test_machine_readable_schema_is_bounded_and_matches_contract(self):
+        schema = json.loads((ROOT / "docs" / "composition.schema.json").read_text(encoding="utf-8"))
+        self.assertEqual(schema["$id"], "codex-governance-skills/composition-v1")
+        self.assertFalse(schema["additionalProperties"])
+        self.assertIn("parent_request_id", schema["required"])
+        self.assertEqual(schema["properties"]["budget"]["properties"]["depth"]["maximum"], 2)
+        self.assertEqual(schema["properties"]["evidence_refs"]["maxItems"], 20)
+
+    def test_composition_protocol_separates_status_domains_and_lifecycle(self):
+        composition = (ROOT / "docs" / "composition.md").read_text(encoding="utf-8")
+        for marker in (
+            "composition-v1",
+            "recovery_status",
+            "action_status",
+            "review_status",
+            "execution_status",
+            "authority_owner",
+            "degradation",
+            "lifecycle",
+            "组合深度默认不超过 2",
+            "禁止回指祖先形成循环",
+            "单技能合同",
+            "组合负例",
+        ):
+            self.assertIn(marker, composition)
+
     def test_ui_metadata_matches_skill_names(self):
         for name in EXPECTED:
             metadata = (SKILLS / name / "agents" / "openai.yaml").read_text(encoding="utf-8")

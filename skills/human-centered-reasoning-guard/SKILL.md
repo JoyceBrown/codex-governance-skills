@@ -188,7 +188,7 @@ After interruption, compaction, or handoff, restore from the durable task card d
 
 ## Composition Contract
 
-This guard is independently usable and remains the gate for writes, external state, and consequential completion claims. Optional integrations exchange only a bounded envelope: `request_id`, `risk`, `target`, `source_of_truth`, `evidence_refs`, `authorization`, `rollback`, and `next_action`.
+This guard is independently usable and remains the gate for writes, external state, and consequential completion claims. It follows `composition-v1` (see `docs/composition.schema.json`); optional integrations exchange `evidence_refs`, `next_action`, and `budget` plus locally retained `risk`, `target`, `source_of_truth`, `authorization`, and `rollback` metadata. Local authorization metadata is evidence for the Guard and never becomes transferable permission.
 
 HCR cognitive mode is an internal consumer/proposer, not another governance
 authority. Its requirement list and governance statuses are read-only projections;
@@ -205,6 +205,8 @@ scope; a Replay recommendation never supplies missing authorization.
 - `deliberate-project` is a read-only, explicit-only inquiry. Its findings can strengthen a fact gate, but its role count never authorizes action.
 
 When an optional integration is missing, keep the guard's local task-card, fact-gate, goal-gate, identity, rollback, and verification requirements. Missing evidence remains an unknown or block; it is never silently downgraded to a low-risk action.
+
+The standalone fallback is always the local gate. A composed result may add evidence or a suggested next action, but no child envelope can override `action_status=BLOCKED`, supply missing authorization, or turn `UNKNOWN` execution into completion.
 
 ## Experience Learning
 

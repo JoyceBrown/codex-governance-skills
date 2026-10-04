@@ -233,7 +233,7 @@ Adjudication uses binding constraints, engineering feasibility, authorized objec
 
 ## Composition Contract
 
-Read-only and explicit-only; integrations pass bounded metadata, never authority.
+Read-only and explicit-only. Use `composition-v1`. Standalone preserves gaps and never dispatches. Envelope: `evidence_refs`, `next_action`, `budget`.
 
 ## Maintain Experience Without Rewriting the Core
 

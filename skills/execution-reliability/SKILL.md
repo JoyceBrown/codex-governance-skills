@@ -52,7 +52,7 @@ description: 在 Windows、命令行、electron-builder/桌面打包、产品变
 
 ## Composition Contract
 
-对外只交换有限结构化字段：
+对外组合消息遵循 `composition-v1`（见 `docs/composition.schema.json`），只交换有限结构化字段。下面的本地执行收据保留给执行层；映射到组合信封时，`status` 映射到 `action_status`，`retry` 保留为证据字段，不能把它当作 `execution_status` 或 Guard 授权。
 
 ```json
 {
@@ -70,6 +70,8 @@ description: 在 Windows、命令行、electron-builder/桌面打包、产品变
 ```
 
 字段没有证据时标为 `Open`；不传原始提示、完整命令、凭据、聊天记录、账本内容或私有源码。脚本是无状态辅助器，默认只输出 JSON；需要落盘时由调用方明确给出目标路径，且不能把它当作项目计划或第二任务数据库。
+
+单独使用时仍执行自己的有界预检、验证和一次重试判断。缺少 `diagnose`、`tdd-loop` 或 Guard 时回退到本地执行证据；只有高风险目标身份、授权或回滚不明才阻塞。组合校验失败时返回 `WARN`/`BLOCKED` 收据，不递归触发其他技能。
 
 ## 不阻断的条件
 

@@ -28,3 +28,10 @@ next_action / budget
 
 默认只读。用户明确授权实现时，交给 TDD Loop 或项目原有工程流程；同一假设连续失败两次后切换假设，不重复原命令。
 
+## 组合与独立运行合同
+
+遵循 `composition-v1`（见 `docs/composition.md`）。单独使用时至少保留两个竞争假设、一次区分性检查和一个最小下一动作；没有执行证据时保持 `OPEN` 或 `CONFLICTED`，不自动修复。
+
+- 可选借用 `execution-reliability` 的目标/环境证据、`architecture-health` 的边界检查、`tdd-loop` 的行为验证或 Guard 的用户影响门禁；协作者只能补证据，不能替换根因判断。
+- 对外返回 `claim_kind`、`recovery_status`、`review_status`、`evidence_refs`、`next_action` 和 `budget`。协作者不可用时使用 `degradation=standalone`，把真正影响判断的缺口写成 `Open`。
+

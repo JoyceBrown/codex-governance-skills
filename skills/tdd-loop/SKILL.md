@@ -24,3 +24,10 @@ description: 在用户授权的代码变更中，用有界的测试先行、实�
 
 只修改用户授权范围。不得自动提交、推送、部署、迁移、删除或安装陌生依赖。Guard 的事实门禁、回滚要求和完成收据优先于本 Skill 的便利性。
 
+## 组合与独立运行合同
+
+遵循 `composition-v1`（见 `docs/composition.md`）。单独使用时在授权范围内完成有界的测试先行、实现、回归和用户路径验证；缺少协作者不阻塞本地闭环，但未验证的外部结果必须保持 `UNKNOWN` 或 `PARTIAL`。
+
+- 可选借用 `diagnose` 的区分性检查、`execution-reliability` 的目标身份和产物证据、Guard 的授权/完成门禁或 `architecture-health` 的边界发现；这些输入不能扩大代码范围。
+- 对外返回 `action_status`、`execution_status`、`review_status`、`evidence_refs`、`next_action` 和 `budget`。组合失败时回退到本地测试流程；不能用 `COMPLETED` 掩盖用户路径或外部副作用未验证。
+

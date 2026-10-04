@@ -1,0 +1,142 @@
+{
+  "schema": "codex-governance-skills-capability-registry-v1",
+  "composition_protocol": "composition-v1",
+  "authority": "docs/composition.md",
+  "envelope_schema": "docs/composition.schema.json",
+  "validator": "scripts/validate-composition.py",
+  "standalone_requirement": "required_dependencies must be empty for every skill",
+  "skills": [
+    {
+      "name": "bootstrap-codex-project",
+      "class": "governance",
+      "authority_owner": "project_authority",
+      "invocation": "implicit-on-project-bootstrap-or-governance-signal",
+      "required_dependencies": [],
+      "optional_collaborators": ["intent-alignment", "architecture-health", "human-centered-reasoning-guard"],
+      "outputs": ["project_context", "plan_authority", "migration_decision"],
+      "write_scope": ["project-governance-files"],
+      "forbidden_scope": ["durable-ledger", "credentials", "external-side-effects"],
+      "standalone_fallback": "Use current repository evidence and record missing optional evidence as Open."
+    },
+    {
+      "name": "durable-context",
+      "class": "governance",
+      "authority_owner": "continuity_ledger",
+      "invocation": "implicit-on-long-running-or-interrupted-work",
+      "required_dependencies": [],
+      "optional_collaborators": ["bootstrap-codex-project", "human-centered-reasoning-guard", "diagnose"],
+      "outputs": ["resume_status", "checkpoint", "requirements_hash", "next_action"],
+      "write_scope": ["project-agent-context-ledger"],
+      "forbidden_scope": ["project-plan-authority", "user-authorization", "source-code"],
+      "standalone_fallback": "Start or restore its own ledger; without history return bounded recovery status."
+    },
+    {
+      "name": "human-centered-reasoning-guard",
+      "class": "governance",
+      "authority_owner": "authorization_and_completion_gate",
+      "invocation": "implicit-on-write-external-side-effect-or-consequential-claim",
+      "required_dependencies": [],
+      "optional_collaborators": ["intent-alignment", "diagnose", "execution-reliability", "deliberate-project"],
+      "outputs": ["authorization", "rollback_gate", "completion_gate", "user_outcome"],
+      "write_scope": ["authorized-project-or-experience-records"],
+      "forbidden_scope": ["override-user-authorization", "replace-project-plan", "invent-evidence"],
+      "standalone_fallback": "Run the guard against current user request and current evidence; unknown stays unknown."
+    },
+    {
+      "name": "deliberate-project",
+      "class": "governance",
+      "authority_owner": "read_only_review",
+      "invocation": "explicit-only",
+      "required_dependencies": [],
+      "optional_collaborators": ["architecture-health", "diagnose", "capability-director"],
+      "outputs": ["findings", "competing_judgments", "evidence_gaps"],
+      "write_scope": ["none-by-default"],
+      "forbidden_scope": ["implementation", "automatic_decision", "authorization"],
+      "standalone_fallback": "Review from supplied and current evidence; preserve disagreement and Open gaps."
+    },
+    {
+      "name": "project-agent-orchestrator",
+      "class": "governance",
+      "authority_owner": "current_session_execution",
+      "invocation": "explicit-only",
+      "required_dependencies": [],
+      "optional_collaborators": ["bootstrap-codex-project", "durable-context", "human-centered-reasoning-guard", "tdd-loop", "execution-reliability"],
+      "outputs": ["development_slice", "verification_receipt", "next_action", "run_mode"],
+      "write_scope": ["authorized-project-code-tests-and-receipts"],
+      "forbidden_scope": ["cross-session-host-control", "user-authorization", "second-plan-system"],
+      "standalone_fallback": "Execute the current plan directly; absent helpers do not block safe local development."
+    },
+    {
+      "name": "intent-alignment",
+      "class": "atomic",
+      "authority_owner": "intent_summary",
+      "invocation": "implicit-on-ambiguous-goal-or-acceptance",
+      "required_dependencies": [],
+      "optional_collaborators": ["human-centered-reasoning-guard", "bootstrap-codex-project"],
+      "outputs": ["alignment_card", "unknowns", "next_action"],
+      "write_scope": ["none"],
+      "forbidden_scope": ["code", "plan", "ledger", "external-state"],
+      "standalone_fallback": "Return a short alignment card and mark inferred details as ASSUMED."
+    },
+    {
+      "name": "diagnose",
+      "class": "atomic",
+      "authority_owner": "root_cause_evidence",
+      "invocation": "implicit-on-failure-or-inconsistency",
+      "required_dependencies": [],
+      "optional_collaborators": ["execution-reliability", "architecture-health", "tdd-loop", "human-centered-reasoning-guard"],
+      "outputs": ["hypotheses", "discriminating_check", "root_cause", "next_action"],
+      "write_scope": ["none-by-default"],
+      "forbidden_scope": ["claim_without_check", "unbounded_retry", "automatic_fix"],
+      "standalone_fallback": "Use competing hypotheses and one bounded distinguishing check."
+    },
+    {
+      "name": "tdd-loop",
+      "class": "atomic",
+      "authority_owner": "code_test_verification",
+      "invocation": "implicit-on-authorized-code-change",
+      "required_dependencies": [],
+      "optional_collaborators": ["diagnose", "execution-reliability", "human-centered-reasoning-guard", "architecture-health"],
+      "outputs": ["test_evidence", "implementation_result", "user_path_result"],
+      "write_scope": ["authorized-code-and-tests"],
+      "forbidden_scope": ["unapproved-product-scope", "plan-authority", "external-release"],
+      "standalone_fallback": "Run a bounded test-first loop and report unresolved failures without false completion."
+    },
+    {
+      "name": "architecture-health",
+      "class": "atomic",
+      "authority_owner": "architecture_evidence",
+      "invocation": "implicit-on-boundary-dependency-capacity-or-rollback-signal",
+      "required_dependencies": [],
+      "optional_collaborators": ["diagnose", "deliberate-project", "bootstrap-codex-project", "tdd-loop"],
+      "outputs": ["boundary_findings", "dependency_findings", "rollback_risk"],
+      "write_scope": ["none"],
+      "forbidden_scope": ["unsupported_structural_change", "product_decision", "authorization"],
+      "standalone_fallback": "Report evidence-backed findings and a smallest safe next check."
+    },
+    {
+      "name": "capability-director",
+      "class": "atomic",
+      "authority_owner": "capability_recommendation",
+      "invocation": "implicit-on-capability-mismatch",
+      "required_dependencies": [],
+      "optional_collaborators": ["architecture-health", "deliberate-project"],
+      "outputs": ["capability_gap", "bounded_candidates", "recommendation"],
+      "write_scope": ["none"],
+      "forbidden_scope": ["install", "enable", "download", "permission_grant"],
+      "standalone_fallback": "Describe the gap and up to three candidates, or return Open without inventing a capability."
+    },
+    {
+      "name": "execution-reliability",
+      "class": "atomic",
+      "authority_owner": "execution_evidence",
+      "invocation": "implicit-on-windows-build-install-git-process-or-ui-risk",
+      "required_dependencies": [],
+      "optional_collaborators": ["diagnose", "human-centered-reasoning-guard", "tdd-loop", "project-agent-orchestrator"],
+      "outputs": ["execution_receipt", "target_identity", "retry_decision"],
+      "write_scope": ["authorized-execution-target"],
+      "forbidden_scope": ["plan", "ledger", "authorization", "automatic-adjudication"],
+      "standalone_fallback": "Perform bounded preflight and verification; fail open for low-risk actions and stop high-risk ambiguity."
+    }
+  ]
+}

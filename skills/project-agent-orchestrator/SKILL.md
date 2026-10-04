@@ -1,75 +1,134 @@
 ---
 name: project-agent-orchestrator
-description: Run explicitly enabled PAO work in the current project session with one plan authority, optional bounded internal helpers, and direct verification. Legacy cross-session orchestration is archived and never a prerequisite.
+description: Run explicitly enabled PAO work in the current project session with one plan authority, bounded continuous development, optional internal implementation helpers, structured recovery receipts, and direct verification. Legacy cross-session orchestration is archived and never a prerequisite.
 ---
 
 # Project Agent Orchestrator
 
-本版本的 PAO 是当前会话内的项目执行模式。它用于让一个长任务在同一会话中按项目计划持续推进，并在中断后从项目文件和验证结果恢复。项目计划、当前代码和测试是事实源；本 Skill 不建立第二套项目状态。
+本版本的 PAO 是当前会话内的项目开发执行模式。它把用户给出的开发目标接入项目唯一计划，连续实现可验证切片，使用有限的内部助手和自动修复，并在中断后从项目文件和验证结果恢复。项目计划、当前代码、测试和收据是事实源；本 Skill 不建立第二套项目状态。
 
-## 开启与关闭
+## 开启、开发和关闭
 
 PAO 默认关闭。只有用户明确输入以下任一指令才开启：
 
 - 开启 PAO 模式
-- /pao on
+- `/pao on`
+- `/pao develop`
+
+模式含义：
+
+- `pao`：按当前计划执行一个或多个安全切片，完成本轮验证后收口。
+- `pao_develop`：在同一 turn 内持续执行开发队列，直到队列完成、真实阻塞、预算耗尽或达到固定停止点；代码任务中“开启 PAO”默认采用此档位，用户明确要求只分析或审查时采用 `pao`。
 
 用户输入以下任一指令后关闭：
 
 - 关闭 PAO 模式
-- /pao off
+- `/pao off`
 
-每次最终回复单独注明：本次任务运行模式：PAO 或 本次任务运行模式：非 PAO。开启 PAO 不要求创建新聊天、等待其他聊天、外部宿主、持续服务或人工确认。
+关闭后不得继续使用 PAO 的计划推进、内部助手派发或连续开发规则。PAO 不创建独立聊天、不启动后台服务、不保证 turn 结束后自动发起下一 turn。
 
 ## 权威和执行权
 
-- 项目根目录的 PLANS.md 是唯一持续执行计划；只有 status: active 且 authority: exclusive 的计划可以授权开发。
-- 当前会话直接执行计划中的当前任务，并拥有该任务的实现、验证和进度记录责任。
-- docs/roadmap.md 只描述方向，docs/work/current.md 只记录进度和证据；二者不能产生第二个任务来源。
-- 用户最新明确指令优先，但需求变化仍须在 PLANS.md 中记录为 task_adjustment、priority_branch 或 roadmap_change。
-- 计划完成后遵循 on_complete；当前任务未满足完成条件时不得把部分进度宣布为完成。
+- 项目根目录的 `PLANS.md` 是唯一持续执行计划；只有 `status: active` 且 `authority: exclusive` 的计划可以授权开发。
+- 当前会话直接执行计划中的当前任务，并拥有实现、验证、进度记录和阶段推进责任。
+- `docs/roadmap.md` 只描述方向，`docs/work/current.md` 只记录进度和证据；二者不能产生第二个任务来源。
+- 用户最新明确指令优先；需求变化仍须在 `PLANS.md` 中记录为 `task_adjustment`、`priority_branch` 或 `roadmap_change`。
+- 若 `PLANS.md` 提供 `execution_queue`，它是当前任务下的有序开发切片；没有队列时只能依据当前任务的完成条件生成一个可验证的下一切片，并把结果写入既有检查点，不另建任务系统。
+- 计划完成后遵循 `on_complete`；当前任务未满足完成条件时不得宣布阶段完成或激活下一阶段。
 
-## 工作流程
+## 开发执行循环
 
-1. 读取项目根、PLANS.md、当前进度和相关实现，核对唯一 active/exclusive 计划及唯一 in_progress 任务。
-2. 将用户任务压缩为目标、范围、非目标、验收、输出、权限、依赖和停止条件；在计划变化时先更新计划权威。
-3. 在当前会话直接实现最小可运行切片，保持既有模块边界、数据不变量和研究采用门禁。
-4. 为正例、反例、失败、恢复和用户可见路径补充必要验证；测试通过不自动掩盖尚未验证的外部副作用。
-5. 更新项目收据和 docs/work/current.md，说明改动、证据、剩余风险和下一动作。
-6. 最终核对工作区、测试结果和用户成功状态，并按本文件标注 PAO 模式。
+在 `pao_develop` 下，按以下循环执行，不因完成一个文件或一个测试就提前结束：
 
-## 可选内部辅助
+1. 读取项目根、`PLANS.md`、当前进度、最近收据、相关代码和测试；确认唯一 `active/exclusive` 计划及唯一 `in_progress` 任务。
+2. 把当前任务变成有序切片：实现目标、依赖、改动边界、验证命令、停止条件和下一切片。
+3. 实现最小可运行切片。切片至少同时满足：存在可调用的代码路径、至少一条针对行为的验证、失败状态或边界有明确结果、没有绕过项目既有写入边界。
+4. 运行针对性测试；失败时改变输入或代码后最多自动修复两轮。同一失败命令不得在状态不变时重复执行。
+5. 若队列仍有下一项且预算允许，继续执行；每完成一个切片更新既有检查点的 `last_completed_slice` 和 `next_slice`。
+6. 当前任务的全部完成条件满足后，执行阶段级验证、写入阶段收据，并按 `on_complete` 推进；否则保留 `in_progress`。
+7. 接近上下文、工具、时间或重试预算时，先写可恢复检查点，再停止本轮。
 
-当前会话可以创建短期、边界明确的内部子代理来做只读审计、测试或证据整理。子代理没有计划权威，也不能改变范围、完成条件、研究边界或发布状态。没有子代理、子代理不可用或子代理结果不完整，都不阻塞当前会话；父会话必须复核其结果后再使用。
+“最小可运行切片”不得只写文档或只改类型声明；如果本阶段明确排除运行时，则必须提供隔离 fixture 或契约测试证明边界。研究材料被引用时，必须先确认 adoption 记录、来源哈希和权利状态；`research_only` 只能作为证据，不能直接进入运行时规则、Prompt、PolicyPack 或 Canon。研究覆盖、哈希或权利门禁不满足时，标记 `blocked`/`ABSTAIN` 并停止扩大影响。
 
-## 中断恢复
+## 内部开发助手
 
-恢复时重新读取 PLANS.md、当前代码、工作区状态、最近收据和测试结果，比较当前事实后继续。不要等待已经丢失的聊天，不要重放结果不明的副作用，不要把历史聊天、缓存或隐藏账本当作当前授权。若当前任务状态不明，先做只读核对并将结果写入当前收据，再决定继续、回退或停止。
+当前会话可以创建短期、边界明确的内部助手来增加开发吞吐量，角色可以是：
 
-## 失败和停止
+- `implementer`：实现独立模块或小切片；
+- `tester`：补充行为测试、运行回归并整理失败证据；
+- `debugger`：针对已复现失败提出最小修复。
 
-失败时保留原始数据和收据，标记适用的 failed、unknown、stale、lagging 或 rebuild_required 状态，停止扩大影响，完成对账后再重试。所有循环、重试、并发和外部写入都必须有明确终止条件。缺少可选工具时在收据中记录能力缺口，但不把它升级为当前会话开发门禁。
+内部助手没有计划权威，不能改变范围、完成条件、研究边界、发布状态或当前收据。父会话负责分派、复核、合并和最终验证。互不冲突的任务可以并行；共享文件或同一状态机的任务必须串行，优先使用隔离工作区。助手不可用、结果不完整或返回未知状态都不阻塞父会话，父会话应回到当前切片并记录证据。助手用完即丢，不进入用户可见长期会话列表。
 
-## Composition Contract
+## 中断恢复和有界恢复层级
 
-## 组合边界
+恢复时先读取 `PLANS.md`、当前检查点、最近收据、当前代码和工作区状态，不等待已经丢失的聊天，不重放结果不明的副作用。恢复结果只能使用以下状态：
 
-- bootstrap-codex-project 负责项目文件、计划权威和 on_complete。
-- durable-context 负责跨会话检查点和恢复账本；本 Skill 只引用其证据，不建立第二个账本。
-- human-centered-reasoning-guard 负责目标、身份、证据和完成声明门禁。
-- execution-reliability 负责 Windows、Git、进程和有限重试核验。
+- `FOUND`：权威计划、当前切片和验证证据一致，可以继续。
+- `PARTIAL`：部分检查点或证据缺失；只做一次定向补查，完成可证明安全的切片后重新收口。
+- `NOT_FOUND`：找不到权威记录；停在恢复点，不凭聊天记忆推断任务或结果。
+- `CONFLICTED`：计划、代码、收据或用户要求互相冲突；先标出冲突并以最新用户指令和当前文件对账。
+- `BLOCKED_UNCERTAINTY`：外部写入、命令结果或进程状态不确定；先检查权威外部状态，不自动重试。
+
+固定停止点：一次定向恢复补查、一次外部状态核验、同一修复最多两轮。达到停止点仍不能确认时，保留原始数据和收据，标记 `failed`、`unknown`、`stale`、`lagging` 或 `rebuild_required`，停止扩大影响。
+
+## Composition Contract / 组合边界
+
+本 Skill 的组合消息遵循 `composition-v1`（见 `docs/composition.schema.json`）；独立运行时 `source_skill` 与 `target_skill` 相同、`degradation=standalone`。其 PAO 收据中的 `status`、`run_mode` 是本 Skill 内部输出，映射到组合信封时必须分别填入 `execution_status`、`action_status` 和 `degradation`，不能用一个通用 `status` 代替多个状态域。
+
+- `bootstrap-codex-project` 负责项目文件、计划权威和 `on_complete`。
+- `durable-context` 负责跨会话检查点和恢复账本；恢复状态词汇沿用其 `FOUND`、`PARTIAL`、`NOT_FOUND`、`CONFLICTED`、`BLOCKED_UNCERTAINTY` 定义，本 Skill 不另立一套恢复语义，也不建立第二个账本。
+- `human-centered-reasoning-guard` 负责目标、身份、证据和完成声明门禁。
+- `execution-reliability` 负责 Windows、Git、进程和有限重试核验。
+- `tdd-loop` 负责代码测试闭环；本 Skill 负责把测试接入开发队列和阶段推进。
 - 其他 Skill 只通过目标、范围、证据、状态和下一动作交换摘要，不改变项目计划。
+
+缺少任何可选协作者时仍按当前计划直接执行安全切片；只有会改变结果的证据缺口才标为 `Open`、`partial` 或 `blocked`。组合调用达到深度、调用次数或字符预算时，写检查点并回退到当前会话的 standalone 开发循环。
+
+## Non-Goals
+
+- 不替代领域调试、安全审查、产品决策或人工授权。
+- 不创建 commander、租约、跨会话回调、外部宿主、后台守护进程或多写入者任务数据库。
+- 不建立第二套项目计划、记忆账本或验收系统。
+- 不因每次纠错、每个小切片或每个助手结果无限增加文档和收据。
+- 不把测试通过、上下文完整或收据存在误报为产品功能、文学质量或外部副作用已经成功。
+
+## 结构化收据合同
+
+每次最终回复必须提供一份短收据；阶段完成、失败、暂停或恢复时，将同一收据写入项目已有的阶段收据或检查点，不新建第二个账本。字段必须保持稳定：
+
+```json
+{
+  "plan_id": "<PLANS.md plan_id>",
+  "task_id": "<current in_progress task>",
+  "status": "completed | in_progress | failed | blocked | unknown",
+  "evidence_refs": ["<test, receipt, commit, or checkpoint reference>"],
+  "run_mode": "pao | pao_develop | non_pao",
+  "next_action": "<one smallest executable action or null>",
+  "budget": {
+    "slices": 0,
+    "tool_calls": 0,
+    "retries_used": 0,
+    "retry_limit": 2,
+    "context": "ok | near_limit | exhausted"
+  }
+}
+```
+
+`evidence_refs` 只能引用真实可定位的测试、收据、提交、检查点或外部状态；没有证据写 `Open`，不得编造。`status=completed` 只表示当前收据覆盖的切片或阶段已满足其完成条件，不代表整个项目完成。`next_action` 必须是一个动作，不写散文计划。预算字段用于限制连续开发、恢复和重试，不要求每次输出完整日志。
+
+执行保证边界：这些字段是 Skill 级协议，不是宿主运行时强制机制。没有宿主回执、钩子或外部验证器时，仓库验证最多检查技能文本和已生成收据的形状，不能证明代理在每个 turn 都实际执行了对应动作。不得把“收据存在”当作运行时行为已经被强制或外部副作用已经成功。
 
 ## 旧资料
 
-references/ 和 scripts/ 中的跨会话协议、适配器和回归夹具仅作为历史兼容资料保存，不属于本 Skill 的执行规则。它们不得被引用来要求额外聊天、外部投递、回调、租约或独立验收；项目计划和当前会话直接验证优先。
+`references/` 和 `scripts/` 中的跨会话协议、适配器和回归夹具仅作为历史兼容资料保存，不属于本 Skill 的执行规则。不得引用它们来要求额外聊天、外部投递、回调、租约或独立验收；项目计划和当前会话直接验证优先。
 
 ## 输出合同
 
 最终回复至少说明：
 
 - 当前计划和任务；
-- 已完成的实现或治理修复；
+- 本轮完成的开发切片或治理修复；
 - 验证命令及结果；
-- 未完成项或已知非阻塞误报；
-- 本次任务运行模式：PAO。
+- 未完成项、恢复状态或已知非阻塞误报；
+- 本次任务运行模式：PAO、PAO 开发模式或非 PAO。

@@ -20,3 +20,11 @@ description: 审查软件或自动化系统的边界、依赖、接口、状态�
 
 默认只读。需要实现时把结论交给 Bootstrap 的计划权责、Guard 的门禁和 TDD Loop 的实现闭环。不要新增数据库、常驻 Broker、全局记忆或复杂代理层来掩盖缺少证据。
 
+## 组合与独立运行合同
+
+遵循仓库的 `composition-v1` 信封（见 `docs/composition.md` 和 `docs/composition.schema.json`）。单独使用时只依据当前项目证据输出边界发现、风险和一个最小检查；缺少协作者不阻塞只读审查，缺口标为 `Open`。
+
+- 可选借用 `diagnose` 的竞争根因、`deliberate-project` 的只读观点、`bootstrap-codex-project` 的计划上下文或 `tdd-loop` 的验证证据；这些输入不能替代架构证据，也不能授权结构性改动。
+- 对外只传 `scope`、`claim_kind`、状态域、`evidence_refs`、`next_action` 和 `budget`；不传完整代码、聊天或计划账本。
+- `action_status=BLOCKED` 或证据状态为 `CONFLICTED` 时停止扩大建议；组合失败回退到本 Skill 的只读输出。
+

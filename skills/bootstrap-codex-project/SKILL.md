@@ -246,7 +246,7 @@ Do not claim the project is fully configured when commands, deployment, security
 
 ## Composition Contract
 
-This Skill remains complete when used alone. When the optional governance set is present, it accepts a compact envelope with `request_id`, `intent_status`, `evidence_refs`, `scope`, `next_action`, and `budget`; it does not accept raw transcripts as authority.
+This Skill remains complete when used alone. It follows `composition-v1` (see `docs/composition.md` and `docs/composition.schema.json`) when optional collaborators are present: it accepts a bounded envelope with `request_id`, `intent_status`, `evidence_refs`, `scope`, `next_action`, `degradation`, and `budget`; it does not accept raw transcripts as authority.
 
 - `intent-alignment` may supply a clarified goal and explicit non-goals. Treat it as **Decided** only when the user or a canonical project file supports it; otherwise keep it **Assumed** or **Open**.
 - `durable-context` may supply a verified resume package. Use its requirements and ledger hashes as continuity evidence, but keep this Skill's project-file ownership rules authoritative for generated artifacts.
@@ -255,6 +255,8 @@ This Skill remains complete when used alone. When the optional governance set is
 - `deliberate-project` is read-only and explicit-only. Its findings can inform an audit or decision record, but never authorize implementation.
 
 When an optional Skill is absent, continue with the standalone workflow and record the missing capability as an explicit **Open** item only if it changes the result. Never create a second plan, ledger, or project authority to emulate a missing integration.
+
+The standalone fallback owns project structure, requirements, and plan decisions from current repository evidence. Composition failures return to that fallback; `action_status=BLOCKED` or a Guard denial cannot be turned into a plan approval by this Skill.
 
 ## Guardrails
 

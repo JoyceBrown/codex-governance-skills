@@ -106,7 +106,7 @@ Use the bundled read-only Context MCP when another Codex surface or third-party 
 
 ## Composition Contract
 
-This Skill is independently usable and remains the only authority for the project continuity ledger. Optional integrations consume a bounded envelope with `request_id`, `status`, `scope`, `evidence_refs`, `next_action`, `budget`, and baseline hashes; they never receive raw prompt history or ledger internals by default.
+This Skill is independently usable and remains the only authority for the project continuity ledger. It follows `composition-v1` (see `docs/composition.schema.json`); optional integrations consume a bounded envelope with `request_id`, `recovery_status`, `intent_status`, `evidence_refs` (including bounded baseline-hash references when needed), `next_action`, `degradation`, and `budget`. Local ledger states such as `continuity_status` are not a generic composition `status` and must not replace the separate status domains.
 
 - `bootstrap-codex-project` owns project-file structure and plan/requirements ownership. This Skill verifies continuity and reports drift; it does not rewrite project plans.
 - `intent-alignment` may provide a goal summary for a new turn. Treat it as an input to requirement-change detection, never as a replacement for `requirements.md` or a user decision.
@@ -115,6 +115,8 @@ This Skill is independently usable and remains the only authority for the projec
 - `deliberate-project` may provide read-only finding IDs. Preserve `Open`, `Contested`, and `Coverage-limited` states instead of converting them into decisions.
 
 If an integration is unavailable, return the normal standalone recovery status (`FOUND`, `PARTIAL`, `NOT_FOUND`, `CONFLICTED`, or `BLOCKED_UNCERTAINTY`) with its bounded next action. Do not launch a replacement memory service or recursive recovery agent.
+
+The standalone fallback reads the project card, requirements, recent changes, and current workspace itself. A missing collaborator may reduce evidence to `PARTIAL` or `NOT_FOUND`, but it never justifies a second ledger or an unbounded wait.
 
 ## Verify And Close
 

@@ -54,6 +54,10 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 
 `project-agent-orchestrator` 负责在当前会话中按唯一项目计划推进长任务、恢复中断、记录验证和管理可选的短期内部辅助。用户显式开启后立即可用；缺少外部宿主、额外聊天或辅助代理不影响当前会话开发。`references/` 与 `scripts/` 中的跨会话材料仅保留作历史兼容资料，不是本 Skill 的启动条件或完成门禁。
 
+体系级组合规则见 [组合协议](docs/composition.md)，机器可读的能力、权责、可选协作者和独立回退见 [技能能力清单](docs/skill-capability-registry.json)。每个技能的必需依赖为空；技能只有在当前任务需要时才借用其他技能，缺少协作者时必须回退到独立流程或明确报告能力缺口。
+
+组合信封字段合同见 [composition.schema.json](docs/composition.schema.json)。可用 `python scripts/validate-composition.py envelope.json` 或把 JSON 通过标准输入传入，检查字段、预算、父子链、循环、生命周期和 Guard 阻断继承；它是边界校验器，不是技能运行时或第二任务系统。
+
 ## 组合信封
 
 组合只传递以下有限字段，具体 Skill 仍保留自己的权威边界：

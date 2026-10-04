@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex-governance-skills/composition-v1",
+  "title": "codex-governance-skills composition envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "parent_request_id",
+    "source_skill",
+    "target_skill",
+    "scope",
+    "claim_kind",
+    "intent_status",
+    "recovery_status",
+    "action_status",
+    "review_status",
+    "execution_status",
+    "authority_owner",
+    "side_effect",
+    "evidence_refs",
+    "next_action",
+    "degradation",
+    "budget",
+    "lifecycle"
+  ],
+  "properties": {
+    "schema_version": {"const": "composition-v1"},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "parent_request_id": {"type": ["string", "null"], "maxLength": 128},
+    "source_skill": {"type": "string", "minLength": 1},
+    "target_skill": {"type": "string", "minLength": 1},
+    "scope": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "claim_kind": {"enum": ["observed", "inferred", "proposed", "verified"]},
+    "intent_status": {"enum": ["DECIDED", "ASSUMED", "OPEN", "CONFLICTED"]},
+    "recovery_status": {"enum": ["FOUND", "PARTIAL", "NOT_FOUND", "CONFLICTED", "BLOCKED_UNCERTAINTY"]},
+    "action_status": {"enum": ["READY", "WARN", "BLOCKED", "PARTIAL"]},
+    "review_status": {"enum": ["PASS", "ISSUE", "ABSTAIN", "OPEN"]},
+    "execution_status": {"enum": ["IN_PROGRESS", "COMPLETED", "FAILED", "UNKNOWN"]},
+    "authority_owner": {"type": "string", "minLength": 1},
+    "side_effect": {"enum": ["none", "project_write", "external_write"]},
+    "evidence_refs": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {"type": "string", "minLength": 1, "maxLength": 256}
+    },
+    "next_action": {"type": ["string", "null"], "maxLength": 1000},
+    "degradation": {"enum": ["standalone", "composed", "partial", "blocked"]},
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chars", "calls", "depth"],
+      "properties": {
+        "chars": {"type": "integer", "minimum": 0, "maximum": 8000},
+        "calls": {"type": "integer", "minimum": 0, "maximum": 8},
+        "depth": {"type": "integer", "minimum": 0, "maximum": 2}
+      }
+    },
+    "lifecycle": {
+      "enum": ["created", "routed", "running", "waiting", "partial", "blocked", "resumed", "completed", "abandoned"]
+    }
+  }
+}

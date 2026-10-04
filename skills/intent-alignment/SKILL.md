@@ -35,3 +35,10 @@ next_action: 一个最小可执行动作
 
 只读分析，不修改代码、计划、账本、配置或外部系统。将结果交给 Bootstrap、Durable 或 Guard 时只传字段和证据引用，不传原始聊天。没有足够信息时提出最多三个真正会改变结果的问题，否则采用可逆假设并标明。
 
+## 组合与独立运行合同
+
+遵循 `composition-v1`（见 `docs/composition.schema.json`）。单独使用时直接输出对齐卡；用户未明确的内容只能标为 `ASSUMED`、`OPEN` 或 `CONFLICTED`，并给出一个最小澄清动作，不因缺少其他技能而暂停。
+
+- 可选把对齐卡交给 `bootstrap-codex-project` 作为计划输入，交给 Guard 作为目标和授权检查输入；它不拥有计划、授权或验收事实。
+- 对外只传 `intent_status`、`scope`、`evidence_refs`、`next_action`、`degradation` 和 `budget`。组合不可用时保持 `standalone`，不得从历史摘要补齐用户意图。
+
