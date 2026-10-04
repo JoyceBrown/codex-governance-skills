@@ -15,6 +15,15 @@ This file records progress and handoff state. It does not authorize new work.
 
 {{COMPLETED_WORK}}
 
+## Execution queue projection (optional)
+
+last_completed_slice: {{SLICE_ID_OR_NONE}}
+next_slice: {{NEXT_SLICE_ID_OR_NONE}}
+resume_cursor: {{RESUME_CURSOR_OR_NONE}}
+stop_reason: {{NONE_OR_BOUNDED_STOP_REASON}}
+
+These fields project the active plan's current task for recovery. They do not authorize new work or create a second queue.
+
 ## Validation evidence
 
 {{TESTS_COMMANDS_BEHAVIOR_DIFFS_AND_RESULTS}}

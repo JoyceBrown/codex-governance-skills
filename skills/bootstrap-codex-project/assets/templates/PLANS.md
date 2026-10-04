@@ -59,6 +59,12 @@ milestone. Partial completion of a required bundle is progress, not completion.
 | --- | --- | --- | --- |
 | {{TASK_OR_MILESTONE}} | {{REASON}} | {{DEPENDENCY_SCHEDULE_OR_SCOPE_EFFECT}} | {{CONDITION}} |
 
+## Execution queue (optional)
+
+{{ORDERED_EXECUTION_QUEUE_OR_NONE}}
+
+Each queue item must keep a unique `slice_id`, one of `pending`/`in_progress`/`completed`/`blocked`, a concrete `objective`, observable `done_when` conditions, and bounded `verify` commands. Keep at most one `in_progress` item and make it the current slice; record `stop_reason` when blocked or stopped for budget. This queue is a projection of the current task, not a second plan.
+
 ## Milestones
 
 | Task ID | Status | Route coordinate | Verifiable outcome |

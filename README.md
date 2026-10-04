@@ -58,23 +58,16 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 
 组合信封字段合同见 [composition.schema.json](docs/composition.schema.json)。可用 `python scripts/validate-composition.py envelope.json` 或把 JSON 通过标准输入传入，检查字段、预算、父子链、循环、生命周期和 Guard 阻断继承；它是边界校验器，不是技能运行时或第二任务系统。
 
-## 组合信封
+## 组合协议入口
 
-组合只传递以下有限字段，具体 Skill 仍保留自己的权威边界：
+组合消息只使用 [composition-v1 Schema](docs/composition.schema.json) 和对应的
+[协议说明](docs/composition.md)。请不要再使用旧的 `status/checks` 简化信封；技能自己的
+本地收据仍由各 Skill 保持，只有发生技能交接时才映射为 `composition-v1`。可以用
+`python scripts/validate-composition.py envelope.json`（或标准输入）检查单个信封或有限调用链。
 
-```json
-{
-  "request_id": "turn-or-task-id",
-  "status": "FOUND | PARTIAL | NOT_FOUND | CONFLICTED | BLOCKED_UNCERTAINTY",
-  "scope": "project or task scope",
-  "intent_status": "DECIDED | ASSUMED | OPEN | CONFLICTED",
-  "evidence_refs": ["finding-or-test-id"],
-  "next_action": "continue | targeted_check | ask | stop",
-  "budget": {"chars": 3000, "checks": 3}
-}
-```
-
-摘要不是事实源。项目文件、当前代码、测试结果、`requirements.md`、`PLANS.md` 和 `.agent-context` 的权责仍按对应治理 Skill 执行。没有某个可选 Skill 时，其他 Skill 使用自己的 standalone fallback，并把真正影响结果的缺口标为 `Open`，不会递归搜索或创造新记忆库。
+摘要不是事实源。项目文件、当前代码、测试结果、`requirements.md`、`PLANS.md` 和
+`.agent-context` 的权责仍按对应治理 Skill 执行。没有某个可选 Skill 时，其他 Skill 使用自己的
+standalone fallback，并把真正影响结果的缺口标为 `Open`，不会递归搜索或创造新记忆库。
 
 ## 安装
 

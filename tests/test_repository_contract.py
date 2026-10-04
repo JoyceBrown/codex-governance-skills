@@ -52,8 +52,18 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             skill = (SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
             self.assertIn("Composition Contract", skill)
         composition = (ROOT / "docs" / "composition.md").read_text(encoding="utf-8")
-        for field in ("request_id", "status", "scope", "evidence_refs", "next_action", "budget"):
+        for field in (
+            "schema_version",
+            "request_id",
+            "execution_status",
+            "evidence_refs",
+            "next_action",
+            "budget",
+        ):
             self.assertIn(field, composition)
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("composition-v1 Schema", readme)
+        self.assertNotIn('"status": "FOUND | PARTIAL', readme)
 
     def test_capability_registry_is_complete_and_standalone(self):
         registry_path = ROOT / "docs" / "skill-capability-registry.json"
@@ -70,7 +80,13 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         required = {
             "name",
             "class",
+            "route_role",
+            "route_signals",
             "authority_owner",
+            "authority_binding",
+            "protocol_compatibility",
+            "max_collaborators",
+            "allowed_side_effects",
             "invocation",
             "required_dependencies",
             "optional_collaborators",
@@ -85,6 +101,11 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             self.assertNotIn(name, record["optional_collaborators"], name)
             self.assertTrue(set(record["optional_collaborators"]).issubset(EXPECTED), name)
             self.assertTrue(record["standalone_fallback"].strip(), name)
+            self.assertIn(record["route_role"], {"primary", "explicit_only"}, name)
+            self.assertEqual(record["authority_binding"], "source_owner", name)
+            self.assertIn("composition-v1", record["protocol_compatibility"], name)
+            self.assertLessEqual(record["max_collaborators"], 2, name)
+            self.assertIn("none", record["allowed_side_effects"], name)
 
     def test_every_entrypoint_declares_composition_and_standalone_behavior(self):
         for name in EXPECTED:
@@ -100,7 +121,26 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertFalse(schema["additionalProperties"])
         self.assertIn("parent_request_id", schema["required"])
         self.assertEqual(schema["properties"]["budget"]["properties"]["depth"]["maximum"], 2)
+        self.assertIn("spent_chars", schema["properties"]["budget"]["properties"])
+        self.assertIn("spent_calls", schema["properties"]["budget"]["properties"])
         self.assertEqual(schema["properties"]["evidence_refs"]["maxItems"], 20)
+
+    def test_route_and_protocol_tools_are_published(self):
+        registry = json.loads((ROOT / "docs" / "skill-capability-registry.json").read_text(encoding="utf-8"))
+        self.assertEqual(registry["authority"], "docs/composition.md")
+        self.assertTrue((ROOT / "scripts" / "route-composition.py").is_file())
+        self.assertTrue((ROOT / "tests" / "test_route_composition.py").is_file())
+
+    def test_pao_queue_contract_stays_within_the_single_plan(self):
+        skill = (SKILLS / "project-agent-orchestrator" / "SKILL.md").read_text(encoding="utf-8")
+        for marker in ("Execution Queue Contract", "slice_id", "resume_cursor", "不创建替代队列"):
+            self.assertIn(marker, skill)
+        plans = (SKILLS / "bootstrap-codex-project" / "assets" / "templates" / "PLANS.md").read_text(encoding="utf-8")
+        self.assertIn("## Execution queue (optional)", plans)
+        self.assertIn("not a second plan", plans)
+        checkpoint = (SKILLS / "bootstrap-codex-project" / "assets" / "templates" / "current-work.md").read_text(encoding="utf-8")
+        for marker in ("last_completed_slice", "next_slice", "resume_cursor", "stop_reason"):
+            self.assertIn(marker, checkpoint)
 
     def test_composition_protocol_separates_status_domains_and_lifecycle(self):
         composition = (ROOT / "docs" / "composition.md").read_text(encoding="utf-8")

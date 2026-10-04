@@ -48,6 +48,9 @@ REQUIRED = {
 }
 ALLOWED_KEYS = REQUIRED
 MAX_DEPTH = 2
+MAX_CHARS = 8000
+MAX_CALLS = 8
+GUARD_SKILL = "human-centered-reasoning-guard"
 LIFECYCLE_TRANSITIONS = {
     "created": {"routed", "abandoned"},
     "routed": {"running", "waiting", "blocked", "abandoned"},
@@ -105,25 +108,76 @@ def validate_envelope(envelope: dict[str, Any], *, known_skills: dict[str, dict[
     if action is not None and (not isinstance(action, str) or len(action) > 1000):
         raise CompositionValidationError("next_action must be null or a bounded string")
     budget = envelope["budget"]
-    if not isinstance(budget, dict) or set(budget) != {"chars", "calls", "depth"}:
-        raise CompositionValidationError("budget must contain exactly chars, calls, and depth")
-    for field, maximum in (("chars", 8000), ("calls", 8), ("depth", MAX_DEPTH)):
+    required_budget = {"chars", "calls", "depth"}
+    optional_budget = {"spent_chars", "spent_calls"}
+    if not isinstance(budget, dict) or not required_budget.issubset(budget) or set(budget) - required_budget - optional_budget:
+        raise CompositionValidationError("budget must contain chars, calls, depth, and only optional spent fields")
+    for field, maximum in (("chars", MAX_CHARS), ("calls", MAX_CALLS), ("depth", MAX_DEPTH)):
         if not _is_int(budget[field]) or not 0 <= budget[field] <= maximum:
             raise CompositionValidationError(f"budget.{field} is outside its bounded integer range")
-    if envelope["degradation"] == "standalone" and envelope["source_skill"] != envelope["target_skill"]:
-        raise CompositionValidationError("standalone envelopes must target the same skill")
-    if envelope["action_status"] == "BLOCKED" and envelope["execution_status"] == "COMPLETED":
-        raise CompositionValidationError("a blocked action cannot be completed")
-    if envelope["lifecycle"] == "completed" and envelope["execution_status"] != "COMPLETED":
-        raise CompositionValidationError("completed lifecycle requires COMPLETED execution_status")
+    for field, maximum in (("spent_chars", MAX_CHARS), ("spent_calls", MAX_CALLS)):
+        if field in budget and (not _is_int(budget[field]) or not 0 <= budget[field] <= maximum):
+            raise CompositionValidationError(f"budget.{field} is outside its bounded integer range")
+    if budget.get("spent_chars", 0) > budget["chars"]:
+        raise CompositionValidationError("budget.spent_chars cannot exceed budget.chars")
+    if budget.get("spent_calls", 0) > budget["calls"]:
+        raise CompositionValidationError("budget.spent_calls cannot exceed budget.calls")
     if known_skills is None:
         known_skills = _registry()
     for field in ("source_skill", "target_skill"):
         if envelope[field] not in known_skills:
             raise CompositionValidationError(f"unknown {field}: {envelope[field]}")
-    owners = {item["authority_owner"] for item in known_skills.values()}
-    if envelope["authority_owner"] not in owners:
-        raise CompositionValidationError(f"unknown authority_owner: {envelope['authority_owner']}")
+    source = known_skills[envelope["source_skill"]]
+    target = known_skills[envelope["target_skill"]]
+    if envelope["source_skill"] != envelope["target_skill"]:
+        if envelope["target_skill"] not in source["optional_collaborators"]:
+            raise CompositionValidationError(
+                f"{envelope['source_skill']} is not allowed to call {envelope['target_skill']}"
+            )
+    if envelope["authority_owner"] != source["authority_owner"]:
+        raise CompositionValidationError(
+            "authority_owner must match the source skill's declared authority owner"
+        )
+    if envelope["side_effect"] not in target["allowed_side_effects"]:
+        raise CompositionValidationError(
+            f"{envelope['target_skill']} does not allow side_effect={envelope['side_effect']}"
+        )
+    if envelope["side_effect"] == "external_write" and envelope["source_skill"] != GUARD_SKILL and envelope["target_skill"] != GUARD_SKILL:
+        raise CompositionValidationError("external_write requires the Guard as source or target")
+    if "composition-v1" not in source.get("protocol_compatibility", []):
+        raise CompositionValidationError(f"{envelope['source_skill']} does not support composition-v1")
+    if "composition-v1" not in target.get("protocol_compatibility", []):
+        raise CompositionValidationError(f"{envelope['target_skill']} does not support composition-v1")
+    if envelope["degradation"] == "standalone" and envelope["source_skill"] != envelope["target_skill"]:
+        raise CompositionValidationError("standalone envelopes must target the same skill")
+    if envelope["degradation"] == "standalone" and envelope["parent_request_id"] is not None:
+        raise CompositionValidationError("standalone envelopes cannot be child calls")
+    if envelope["action_status"] == "BLOCKED" and envelope["execution_status"] == "COMPLETED":
+        raise CompositionValidationError("a blocked action cannot be completed")
+    if envelope["execution_status"] == "COMPLETED" and envelope["lifecycle"] != "completed":
+        raise CompositionValidationError("COMPLETED execution_status requires completed lifecycle")
+    if envelope["action_status"] == "BLOCKED" and envelope["lifecycle"] not in {"blocked", "partial", "abandoned"}:
+        raise CompositionValidationError("blocked action requires blocked, partial, or abandoned lifecycle")
+    if envelope["execution_status"] == "FAILED" and envelope["lifecycle"] == "completed":
+        raise CompositionValidationError("FAILED execution_status cannot have completed lifecycle")
+    if envelope["lifecycle"] == "completed" and envelope["execution_status"] != "COMPLETED":
+        raise CompositionValidationError("completed lifecycle requires COMPLETED execution_status")
+    if envelope["lifecycle"] == "completed" and envelope["degradation"] == "blocked":
+        raise CompositionValidationError("blocked degradation cannot be completed")
+    if envelope["degradation"] == "blocked" and envelope["lifecycle"] not in {"blocked", "abandoned"}:
+        raise CompositionValidationError("blocked degradation requires blocked or abandoned lifecycle")
+    if envelope["lifecycle"] == "blocked":
+        if envelope["degradation"] != "blocked":
+            raise CompositionValidationError("blocked lifecycle requires blocked degradation")
+        if envelope["action_status"] != "BLOCKED" and envelope["recovery_status"] != "BLOCKED_UNCERTAINTY":
+            raise CompositionValidationError("blocked lifecycle requires a blocking action or uncertainty")
+    if envelope["lifecycle"] == "partial":
+        if envelope["degradation"] != "partial":
+            raise CompositionValidationError("partial lifecycle requires partial degradation")
+        if envelope["execution_status"] == "COMPLETED":
+            raise CompositionValidationError("partial lifecycle cannot claim completed execution")
+    if envelope["recovery_status"] == "BLOCKED_UNCERTAINTY" and envelope["lifecycle"] not in {"blocked", "partial"}:
+        raise CompositionValidationError("blocked uncertainty requires blocked or partial lifecycle")
     return envelope
 
 
@@ -133,6 +187,26 @@ def validate_lifecycle_transition(previous: str, current: str) -> None:
         raise CompositionValidationError("unknown lifecycle state")
     if current not in LIFECYCLE_TRANSITIONS[previous]:
         raise CompositionValidationError(f"invalid lifecycle transition: {previous} -> {current}")
+
+
+def validate_lifecycle_history(history: list[str | dict[str, Any]]) -> list[str]:
+    """Validate a finite lifecycle history without storing it as runtime state."""
+    if not isinstance(history, list) or not history:
+        raise CompositionValidationError("lifecycle history must be a non-empty array")
+    states: list[str] = []
+    for item in history:
+        state = item.get("lifecycle") if isinstance(item, dict) else item
+        if not isinstance(state, str) or state not in LIFECYCLE_TRANSITIONS:
+            raise CompositionValidationError("lifecycle history contains an unknown state")
+        states.append(state)
+    if states[0] != "created":
+        raise CompositionValidationError("lifecycle history must start at created")
+    for previous, current in zip(states, states[1:]):
+        validate_lifecycle_transition(previous, current)
+    for index, state in enumerate(states[:-1]):
+        if state in {"completed", "abandoned"}:
+            raise CompositionValidationError("completed and abandoned are terminal lifecycle states")
+    return states
 
 
 def validate_chain(chain: list[dict[str, Any]], *, max_depth: int = MAX_DEPTH) -> list[dict[str, Any]]:
@@ -148,12 +222,21 @@ def validate_chain(chain: list[dict[str, Any]], *, max_depth: int = MAX_DEPTH) -
         if item["request_id"] in by_id:
             raise CompositionValidationError(f"duplicate request_id: {item['request_id']}")
         by_id[item["request_id"]] = item
+    roots = [item for item in chain if item["parent_request_id"] is None]
+    if len(roots) != 1:
+        raise CompositionValidationError("a composition chain must contain exactly one root envelope")
+    children: dict[str, list[dict[str, Any]]] = {item["request_id"]: [] for item in chain}
     for item in chain:
         parent = item["parent_request_id"]
         if parent is not None and parent not in by_id:
             raise CompositionValidationError(f"missing parent request_id: {parent}")
         if parent == item["request_id"]:
             raise CompositionValidationError("request cannot parent itself")
+        if parent is not None:
+            parent_item = by_id[parent]
+            if item["source_skill"] != parent_item["target_skill"]:
+                raise CompositionValidationError("child source_skill must equal its parent target_skill")
+            children[parent].append(item)
         depth = 0
         cursor = item
         seen: set[str] = set()
@@ -175,7 +258,65 @@ def validate_chain(chain: list[dict[str, Any]], *, max_depth: int = MAX_DEPTH) -
                 if item["action_status"] in {"READY", "WARN"} or item["execution_status"] == "COMPLETED":
                     raise CompositionValidationError("a descendant cannot override a Guard BLOCKED action")
             ancestor_id = ancestor["parent_request_id"]
+    for item in chain:
+        if len(children[item["request_id"]]) > known[item["target_skill"]]["max_collaborators"]:
+            raise CompositionValidationError("target skill exceeded its max_collaborators limit")
+    root = roots[0]
+    spent_chars = 0
+    spent_calls = 0
+    guard_present = False
+    allocation_by_parent: dict[str, dict[str, int]] = {}
+    for item in chain:
+        budget = item["budget"]
+        if len(chain) > 1 and ("spent_chars" not in budget or "spent_calls" not in budget):
+            raise CompositionValidationError("composed chains must report spent_chars and spent_calls")
+        spent_chars += budget.get("spent_chars", 0)
+        spent_calls += budget.get("spent_calls", 0)
+        if item["source_skill"] == GUARD_SKILL or item["target_skill"] == GUARD_SKILL:
+            guard_present = True
+        parent_id = item["parent_request_id"]
+        if parent_id is not None:
+            parent_budget = by_id[parent_id]["budget"]
+            allocation = allocation_by_parent.setdefault(parent_id, {"chars": 0, "calls": 0})
+            allocation["chars"] += budget["chars"]
+            allocation["calls"] += budget["calls"]
+    for parent_id, allocation in allocation_by_parent.items():
+        parent_budget = by_id[parent_id]["budget"]
+        if allocation["chars"] > parent_budget["chars"] - parent_budget.get("spent_chars", 0):
+            raise CompositionValidationError("child chars allocations exceed the parent's remaining budget")
+        if allocation["calls"] > parent_budget["calls"] - parent_budget.get("spent_calls", 0):
+            raise CompositionValidationError("child calls allocations exceed the parent's remaining budget")
+    if spent_chars > root["budget"]["chars"] or spent_calls > root["budget"]["calls"]:
+        raise CompositionValidationError("composition chain exceeded its root cumulative budget")
+    for item in chain:
+        if item["lifecycle"] == "completed":
+            pending_descendants = [
+                descendant
+                for descendant in chain
+                if descendant["request_id"] != item["request_id"]
+                and item["request_id"] in _ancestor_ids(descendant, by_id)
+                and descendant["lifecycle"] not in {"completed", "abandoned"}
+            ]
+            if pending_descendants:
+                raise CompositionValidationError("completed requests cannot have active descendants")
+    if any(item["side_effect"] == "external_write" for item in chain) and not guard_present:
+        raise CompositionValidationError("external_write requires a Guard source or target in the chain")
+    root_budget = root["budget"]
+    if (spent_chars >= root_budget["chars"] or spent_calls >= root_budget["calls"]) and any(
+        item["execution_status"] == "IN_PROGRESS" and item["lifecycle"] not in {"partial", "blocked", "abandoned", "completed"}
+        for item in chain
+    ):
+        raise CompositionValidationError("an exhausted cumulative budget must stop or become partial")
     return chain
+
+
+def _ancestor_ids(item: dict[str, Any], by_id: dict[str, dict[str, Any]]) -> set[str]:
+    ancestors: set[str] = set()
+    parent_id = item["parent_request_id"]
+    while parent_id is not None:
+        ancestors.add(parent_id)
+        parent_id = by_id[parent_id]["parent_request_id"]
+    return ancestors
 
 
 def _load_input(path: str) -> Any:

@@ -36,6 +36,12 @@ PAO 默认关闭。只有用户明确输入以下任一指令才开启：
 - 若 `PLANS.md` 提供 `execution_queue`，它是当前任务下的有序开发切片；没有队列时只能依据当前任务的完成条件生成一个可验证的下一切片，并把结果写入既有检查点，不另建任务系统。
 - 计划完成后遵循 `on_complete`；当前任务未满足完成条件时不得宣布阶段完成或激活下一阶段。
 
+## Execution Queue Contract
+
+`execution_queue` 是 `PLANS.md` 中当前任务的可选字段，不是第二个计划或账本。每个队列项至少包含 `slice_id`、`status`、`objective`、`done_when` 和 `verify`；`status` 只能是 `pending`、`in_progress`、`completed` 或 `blocked`。同一时刻最多一个 `in_progress`，且必须等于 `current_task_id` 对应任务的当前切片。只有 `done_when` 全部满足、`verify` 有可定位证据并写入既有检查点后，切片才能变为 `completed`；失败或外部状态不明时改为 `blocked`，保留 `stop_reason`，不得跳到下一项。
+
+`current-work.md` 只保存 `last_completed_slice`、`next_slice`、`resume_cursor` 和 `stop_reason` 等恢复投影；它不能授权新任务。队列为空、缺失或与计划冲突时，PAO 回退为当前任务的一个最小可运行切片并标记 `PARTIAL`/`CONFLICTED`，不创建替代队列。接近上下文或工具预算时，先写入这些字段再停止；恢复只从计划、检查点和验证证据重建，不等待旧会话。
+
 ## 开发执行循环
 
 在 `pao_develop` 下，按以下循环执行，不因完成一个文件或一个测试就提前结束：

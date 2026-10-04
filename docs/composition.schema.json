@@ -54,7 +54,9 @@
       "properties": {
         "chars": {"type": "integer", "minimum": 0, "maximum": 8000},
         "calls": {"type": "integer", "minimum": 0, "maximum": 8},
-        "depth": {"type": "integer", "minimum": 0, "maximum": 2}
+        "depth": {"type": "integer", "minimum": 0, "maximum": 2},
+        "spent_chars": {"type": "integer", "minimum": 0, "maximum": 8000},
+        "spent_calls": {"type": "integer", "minimum": 0, "maximum": 8}
       }
     },
     "lifecycle": {
