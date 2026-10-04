@@ -91,6 +91,42 @@ foreach ($name in $Names) {
     }
 }
 
+$excludedDirectoryNames = @('.git', '.agent-context', '.runtime', '__pycache__', '.pytest_cache')
+$excludedFileExtensions = @('.pyc', '.pyo', '.sqlite3', '.log', '.tmp')
+
+function Copy-PublicSkill([string]$Source, [string]$Destination) {
+    # Copy an explicit publish tree instead of recursively cloning caches or
+    # following junctions supplied by a local checkout.
+    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+    $pending = [System.Collections.Generic.Stack[string]]::new()
+    $pending.Push([IO.Path]::GetFullPath($Source))
+    while ($pending.Count -gt 0) {
+        $current = $pending.Pop()
+        foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($current)) {
+            $info = Get-Item -LiteralPath $entry -Force
+            if ($info.Name -in $excludedDirectoryNames) { continue }
+            if (($info.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Reparse points are not allowed in Skill sources: $entry"
+            }
+            $sourceFull = ([IO.Path]::GetFullPath($Source)).TrimEnd('\', '/')
+            $entryFull = [IO.Path]::GetFullPath($entry)
+            $relative = $entryFull.Substring($sourceFull.Length).TrimStart('\', '/')
+            if ([string]::IsNullOrWhiteSpace($relative) -or $relative.StartsWith('..')) {
+                throw "Skill source escaped its root: $entry"
+            }
+            $target = Join-Path $Destination $relative
+            if ($info.PSIsContainer) {
+                New-Item -ItemType Directory -Force -Path $target | Out-Null
+                $pending.Push($entry)
+                continue
+            }
+            if ($info.Extension.ToLowerInvariant() -in $excludedFileExtensions) { continue }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+            [IO.File]::Copy($entry, $target, $false)
+        }
+    }
+}
+
 $hasBackups = @($plans | Where-Object DestinationExists).Count -gt 0
 if ($hasBackups) {
     if ((Test-Path -LiteralPath $backupRoot) -and -not (Test-Path -LiteralPath $backupRoot -PathType Container)) {
@@ -103,7 +139,7 @@ $receipt = @()
 try {
     # Stage the complete bundle before changing any destination.
     foreach ($plan in $plans) {
-        Copy-Item -LiteralPath $plan.Source -Destination $plan.Staging -Recurse
+        Copy-PublicSkill $plan.Source $plan.Staging
     }
 
     if ($hasBackups) {

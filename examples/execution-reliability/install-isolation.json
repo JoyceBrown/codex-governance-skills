@@ -1,0 +1,4 @@
+{
+  "case": "skill source contains __pycache__ or a junction",
+  "expected": "installer rejects or excludes it before touching destinations"
+}

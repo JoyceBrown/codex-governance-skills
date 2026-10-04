@@ -56,6 +56,7 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
             "schema_version",
             "request_id",
             "execution_status",
+            "outcome_status",
             "evidence_refs",
             "next_action",
             "budget",
@@ -130,6 +131,21 @@ class IntegratedRepositoryContractTests(unittest.TestCase):
         self.assertEqual(registry["authority"], "docs/composition.md")
         self.assertTrue((ROOT / "scripts" / "route-composition.py").is_file())
         self.assertTrue((ROOT / "tests" / "test_route_composition.py").is_file())
+        self.assertTrue((ROOT / "scripts" / "validate-artifacts.py").is_file())
+        self.assertTrue((ROOT / "schemas" / "artifact.schema.json").is_file())
+
+    def test_architecture_decisions_and_scope_boundaries_are_published(self):
+        for path in (
+            ROOT / "docs" / "adr" / "0001-pao-execution-boundary.md",
+            ROOT / "docs" / "adr" / "0002-composition-v1.md",
+            ROOT / "docs" / "adr" / "0003-atomic-skills-stay-lightweight.md",
+            ROOT / "docs" / "glossary.md",
+            ROOT / "docs" / "out-of-scope" / "security-review.md",
+            ROOT / "CHANGELOG.md",
+        ):
+            self.assertTrue(path.is_file(), path)
+        version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertRegex(version, r"^\d+\.\d+\.\d+$")
 
     def test_pao_queue_contract_stays_within_the_single_plan(self):
         skill = (SKILLS / "project-agent-orchestrator" / "SKILL.md").read_text(encoding="utf-8")

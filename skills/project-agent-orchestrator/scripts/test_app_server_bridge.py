@@ -649,8 +649,23 @@ class AppServerBridgeTests(unittest.TestCase):
                     "turn": {"id": f"turn-{index}", "status": "inProgress"},
                 },
             })
-        self.assertEqual(len(bridge._notification_turns), 2)
+        self.assertGreaterEqual(len(bridge._notification_turns), 2)
         self.assertTrue(bridge._notification_callback_errors)
+
+    def test_active_notification_turn_is_retained_with_explicit_recovery_gap(self) -> None:
+        bridge = CodexAppServerBridge(FakeTransport(), max_notification_threads=1, max_notification_turns=1)
+        bridge.handle_notification({
+            "method": "turn/started",
+            "params": {"threadId": "thread-active", "turn": {"id": "turn-1", "status": "in_progress"}},
+        })
+        bridge.handle_notification({
+            "method": "turn/started",
+            "params": {"threadId": "thread-old", "turn": {"id": "turn-old", "status": "in_progress"}},
+        })
+        observations = bridge._notification_observations("thread-active")
+        assert observations is not None
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0].recovery_gap, "active_thread_retained_over_capacity")
 
     def test_ephemeral_result_after_restart_is_explicit_recovery_gap(self) -> None:
         bridge = CodexAppServerBridge(EphemeralReadTransport())

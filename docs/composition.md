@@ -51,6 +51,7 @@
   "action_status": "READY | WARN | BLOCKED | PARTIAL",
   "review_status": "PASS | ISSUE | ABSTAIN | OPEN",
   "execution_status": "IN_PROGRESS | COMPLETED | FAILED | UNKNOWN",
+  "outcome_status": "OPEN | PARTIAL | ACCEPTED | REJECTED | UNKNOWN",
   "authority_owner": "human-centered-reasoning-guard",
   "side_effect": "none | project_write | external_write",
   "evidence_refs": ["finding-or-test-id"],
@@ -61,7 +62,7 @@
 }
 ```
 
-必填字段为 `schema_version`、`request_id`、`parent_request_id`、`source_skill`、`target_skill`、`scope`、`claim_kind`、四类状态、`authority_owner`、`side_effect`、`evidence_refs`、`next_action`、`degradation`、`budget` 和 `lifecycle`。`budget.chars/calls/depth` 是当前信封允许的上限；`spent_chars/spent_calls` 是已消耗量，单个信封可省略已消耗量，但组合链必须提供。子节点的上限不得超过父节点剩余上限，整条链的已消耗量不得超过根节点上限。没有证据的字段写 `Open` 或 `null`，不得从自然语言摘要补齐。独立运行时 `source_skill` 与 `target_skill` 相同、无父节点，且 `degradation` 必须是 `standalone`。
+必填字段为 `schema_version`、`request_id`、`parent_request_id`、`source_skill`、`target_skill`、`scope`、`claim_kind`、五类状态、`authority_owner`、`side_effect`、`evidence_refs`、`next_action`、`degradation`、`budget` 和 `lifecycle`。`outcome_status` 专门表示用户目标是否被接受，不能由动作完成状态推断。`budget.chars/calls/depth` 是当前信封允许的上限；`spent_chars/spent_calls` 是已消耗量，单个信封可省略已消耗量，但组合链必须提供。子节点的上限不得超过父节点剩余上限，整条链的已消耗量不得超过根节点上限。没有证据的字段写 `Open` 或 `null`，不得从自然语言摘要补齐。独立运行时 `source_skill` 与 `target_skill` 相同、无父节点，且 `degradation` 必须是 `standalone`。
 
 状态按领域分开：
 
@@ -69,6 +70,7 @@
 - `action_status` 只表示动作是否可以执行；
 - `review_status` 只表示审议或检查结论；
 - `execution_status` 只表示当前动作生命周期；
+- `outcome_status` 只表示调用方对用户目标的接受程度；`COMPLETED` 不等于 `ACCEPTED`；
 - `intent_status` 只表示用户意图是否清楚。
 
 `recovery_status` 的含义和停止规则唯一维护在

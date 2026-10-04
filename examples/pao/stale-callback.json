@@ -1,0 +1,6 @@
+{
+  "case": "old lease callback",
+  "given": "project commander epoch changed after a handoff",
+  "action": "record_event with the old task packet",
+  "expected": "task.stale with reason stale_commander_epoch; current plan is not advanced"
+}

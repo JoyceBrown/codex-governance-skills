@@ -1,0 +1,5 @@
+{
+  "case": "action completed but user path unverified",
+  "execution_status": "COMPLETED",
+  "expected": "keep outcome open or partial; do not report the user goal as accepted"
+}

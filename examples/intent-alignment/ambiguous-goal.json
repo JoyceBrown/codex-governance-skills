@@ -1,0 +1,1 @@
+{"case":"用户说‘把它做好’","expected":{"intent_status":"OPEN","next_action":"询问可见成功状态和范围","side_effect":"none"}}

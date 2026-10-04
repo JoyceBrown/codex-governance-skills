@@ -13,6 +13,37 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "skill-capability-registry.json"
 MAX_COLLABORATORS = 2
+BOOLEAN_FIELDS = {
+    "project_bootstrap",
+    "governance",
+    "ambiguous_goal",
+    "acceptance_unclear",
+    "failure",
+    "inconsistency",
+    "root_cause_unclear",
+    "authorized_code_change",
+    "test_failure",
+    "windows_risk",
+    "build",
+    "install",
+    "git",
+    "process",
+    "ui_automation",
+    "long_running",
+    "interrupted",
+    "resume",
+    "boundary",
+    "dependency",
+    "capacity",
+    "rollback",
+    "capability_mismatch",
+    "continuous_development",
+    "write",
+    "external_side_effect",
+    "consequential_claim",
+    "explicit_deliberation",
+    "explicit_pao",
+}
 
 
 def _registry() -> dict[str, dict[str, Any]]:
@@ -25,6 +56,9 @@ def _normalise_signals(request: dict[str, Any]) -> set[str]:
     if not isinstance(signals, list) or any(not isinstance(item, str) for item in signals):
         raise ValueError("signals must be an array of strings")
     result = {item.strip() for item in signals if item.strip()}
+    for field in BOOLEAN_FIELDS:
+        if field in request and not isinstance(request[field], bool):
+            raise ValueError(f"{field} must be a boolean when provided")
     for field, signal in (
         ("project_bootstrap", "project_bootstrap"),
         ("governance", "governance"),
@@ -102,6 +136,15 @@ def route(request: dict[str, Any]) -> dict[str, Any]:
             "degradation": "standalone",
             "budget": {"chars": 3000, "calls": 0, "depth": 0},
         }
+    # A write, external side effect, or consequential completion claim always
+    # passes through the Guard.  Keep the originally requested skill visible so
+    # a caller can delegate after the gate instead of silently bypassing it.
+    gated_primary = None
+    guard_signals = {"write", "external_side_effect", "consequential_claim"}
+    if signals & guard_signals and primary != "human-centered-reasoning-guard":
+        gated_primary = primary
+        primary = "human-centered-reasoning-guard"
+        reasons.append("Guard is mandatory for write, external-side-effect, or consequential-claim signals")
     primary_record = known[primary]
     candidates = []
     for collaborator in primary_record["optional_collaborators"]:
@@ -111,7 +154,7 @@ def route(request: dict[str, Any]) -> dict[str, Any]:
     collaborators = candidates[: min(MAX_COLLABORATORS, primary_record["max_collaborators"])]
     if candidates and not collaborators:
         reasons.append("matching helpers are not declared by the primary skill; use standalone fallback")
-    return {
+    result = {
         "status": "routed",
         "primary_skill": primary,
         "collaborators": collaborators,
@@ -119,6 +162,10 @@ def route(request: dict[str, Any]) -> dict[str, Any]:
         "degradation": "composed" if collaborators else "standalone",
         "budget": {"chars": 3000, "calls": len(collaborators), "depth": 1 if collaborators else 0},
     }
+    if gated_primary:
+        result["gated_primary_skill"] = gated_primary
+        result["gate"] = "human-centered-reasoning-guard"
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:

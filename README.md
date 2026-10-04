@@ -2,6 +2,8 @@
 
 这是一个面向 Codex 的中文 Skill 集合，目标是让长任务能够恢复正确基线，让软件变更先验证真实目标，再用最小成本完成诊断、测试和架构检查。
 
+当前集合版本见 [VERSION](VERSION)，变更记录见 [CHANGELOG](CHANGELOG.md)。
+
 本仓库包含 5 个治理 Skill 和 6 个轻量原子工程 Skill。每个 Skill 都可以单独使用；组合时只交换有限的结构化摘要，不复制聊天记录、不建立第二套项目事实源、不自动安装或运行陌生能力。
 
 ## 内容状态
@@ -12,7 +14,7 @@
 | 治理 | `durable-context` | 跨会话恢复、基线漂移、有限检索和只读 Context MCP | 复杂任务维护项目本地账本；普通问题不建账 |
 | 治理 | `human-centered-reasoning-guard` | 事实门禁、目标门禁、身份、回滚和完成验证 | 只约束被调用的具体高风险动作，不阻断普通会话 |
 | 治理 | `deliberate-project` | 显式调用的多角度、证据驱动只读审议 | 不修改项目；经验目录另有明确授权时才写入 |
-| 治理 | `project-agent-orchestrator` | 当前会话内的项目计划执行、恢复和可选内部辅助 | 仅在用户显式开启后运行；不创建额外会话或外部服务 |
+| 治理 | `project-agent-orchestrator` | 当前会话内的项目计划执行、恢复和可选内部辅助；可选真实宿主 bridge | 仅在用户显式开启后运行；宿主 bridge 需共享端点和回执，不是启动前提 |
 | 原子 | `intent-alignment` | 把模糊请求压缩为目标、成功状态、范围和未知 | 只读 |
 | 原子 | `diagnose` | 竞争根因、复现路径、区分性检查和证据链 | 只读，除非用户另行授权修复 |
 | 原子 | `tdd-loop` | 红-绿-重构、回归、用户路径验证和测试成本控制 | 只修改授权范围内的代码/测试 |
@@ -52,11 +54,13 @@ Guard 已增量接入 HCR 6.2 的 WHY/WHAT/HOW、认识论状态、结构推理�
 
 `execution-reliability` 是执行层配套 Skill。它在构建、安装、发布、Windows 命令、路径、环境变量、Git、进程和 UI 自动化出现风险信号时做最小预检和后置核验；同一动作最多自动重试一次，状态未知先检查。它不拥有计划、记忆、授权或“三堂会审”，不注册全局 Hook，也不把一次错误自动升级为永久规则。
 
-`project-agent-orchestrator` 负责在当前会话中按唯一项目计划推进长任务、恢复中断、记录验证和管理可选的短期内部辅助。用户显式开启后立即可用；缺少外部宿主、额外聊天或辅助代理不影响当前会话开发。`references/` 与 `scripts/` 中的跨会话材料仅保留作历史兼容资料，不是本 Skill 的启动条件或完成门禁。
+`project-agent-orchestrator` 负责在当前会话中按唯一项目计划推进长任务、恢复中断、记录验证和管理可选的短期内部辅助。用户显式开启后立即可用；缺少外部宿主、额外聊天或辅助代理不影响当前会话开发。需要真实宿主增强时，`scripts/app_server_bridge.py` 只在共享端点、能力探测和结构化回执都满足时启用；旧的跨会话协议资料仍不属于启动条件或完成门禁。
 
 体系级组合规则见 [组合协议](docs/composition.md)，机器可读的能力、权责、可选协作者和独立回退见 [技能能力清单](docs/skill-capability-registry.json)。每个技能的必需依赖为空；技能只有在当前任务需要时才借用其他技能，缺少协作者时必须回退到独立流程或明确报告能力缺口。
 
 组合信封字段合同见 [composition.schema.json](docs/composition.schema.json)。可用 `python scripts/validate-composition.py envelope.json` 或把 JSON 通过标准输入传入，检查字段、预算、父子链、循环、生命周期和 Guard 阻断继承；它是边界校验器，不是技能运行时或第二任务系统。
+
+跨技能收据、对齐卡和检查点的公共形状见 [artifact.schema.json](schemas/artifact.schema.json)，可用 `python scripts/validate-artifacts.py` 做结构预检。它不替代各治理技能的事实门、授权门或用户路径验收。
 
 仓库级检查的输入、通过条件和真实宿主限制见 [评估协议](docs/evaluation-protocol.md)。
 

@@ -1,0 +1,1 @@
+{"case":"任务要求宿主共享端点但当前只发现stdio","expected":{"capability_gap":"shared_endpoint","recommendation":"报告capability_gap并继续独立流程","auto_install":false}}

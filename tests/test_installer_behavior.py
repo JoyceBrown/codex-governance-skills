@@ -164,6 +164,18 @@ function Move-Item {{
             backup_root = Path(temporary) / "skills-backups" / "codex-governance-skills"
             self.assertEqual(list(backup_root.iterdir()) if backup_root.exists() else [], [])
 
+    def test_install_excludes_runtime_caches_from_source_tree(self):
+        with tempfile.TemporaryDirectory(prefix="codex-installer-test-") as temporary:
+            target = Path(temporary) / "skills"
+            result = self.run_powershell(
+                f"& {self.ps_quote(INSTALLER)} -TargetSkillsRoot {self.ps_quote(target)} "
+                "-Names @('project-agent-orchestrator')"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            installed = target / "project-agent-orchestrator"
+            self.assertFalse(any(path.name == "__pycache__" for path in installed.rglob("*")))
+            self.assertFalse(any(path.suffix.lower() in {".pyc", ".sqlite3"} for path in installed.rglob("*")))
+
 
 if __name__ == "__main__":
     unittest.main()

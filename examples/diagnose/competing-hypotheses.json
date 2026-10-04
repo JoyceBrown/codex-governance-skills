@@ -1,0 +1,1 @@
+{"case":"同一命令偶发失败","expected":{"hypotheses":["环境状态变化","输入或代码回归"],"discriminating_check":"先记录一次环境和输入快照","automatic_fix":false}}

@@ -39,6 +39,19 @@ class CompositionRouteTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             router.route({"explicit_skill": "not-a-skill"})
 
+    def test_write_is_gated_even_when_code_skill_is_explicit(self):
+        result = router.route({
+            "explicit_skill": "tdd-loop",
+            "authorized_code_change": True,
+            "write": True,
+        })
+        self.assertEqual(result["primary_skill"], "human-centered-reasoning-guard")
+        self.assertEqual(result["gated_primary_skill"], "tdd-loop")
+
+    def test_malformed_boolean_signal_is_rejected(self):
+        with self.assertRaises(ValueError):
+            router.route({"write": "true"})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codex-governance-skills/artifact-v1",
+  "title": "Governance artifact envelope",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["artifact_kind", "schema_version", "evidence_refs", "next_action", "budget"],
+  "properties": {
+    "artifact_kind": {"enum": ["receipt", "alignment_card", "checkpoint", "composition_envelope"]},
+    "schema_version": {"enum": ["artifact-v1", "composition-v1"]},
+    "evidence_refs": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}},
+    "next_action": {"type": ["string", "null"], "maxLength": 1000},
+    "budget": {"type": "object", "required": ["chars", "calls", "depth"], "additionalProperties": false,
+      "properties": {"chars": {"type": "integer", "minimum": 0}, "calls": {"type": "integer", "minimum": 0}, "depth": {"type": "integer", "minimum": 0}, "spent_chars": {"type": "integer", "minimum": 0}, "spent_calls": {"type": "integer", "minimum": 0}}}
+  }
+}

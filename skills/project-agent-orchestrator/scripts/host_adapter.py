@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -423,6 +424,7 @@ class HostAdapter:
         self.db.execute("PRAGMA busy_timeout = 5000")
         self.max_dispatch_depth = max_dispatch_depth
         self.session_authenticator = session_authenticator
+        self._wake_lock = threading.RLock()
         self._init_schema()
 
     def close(self) -> None:
@@ -1093,49 +1095,70 @@ class HostAdapter:
         receipt_id: str,
         wake_callback: Callable[[str, str], bool] | None = None,
     ) -> dict[str, Any]:
-        """Deliver a durable receipt wake exactly once when the host supports it."""
-        existing = self.db.execute(
-            "SELECT * FROM wake_deliveries WHERE receipt_id=?", (receipt_id,)
-        ).fetchone()
-        if existing:
-            if existing["session_id"] != session_id:
-                return {"result": "target_unresolved", "receipt_id": receipt_id, "session_id": session_id}
-            if existing["status"] == "delivered":
-                return {"result": "duplicate", "receipt_id": receipt_id, "status": existing["status"]}
-            if wake_callback is None:
-                return {"result": "unknown", "receipt_id": receipt_id, "status": existing["status"], "retryable": True}
-            try:
-                delivered = bool(wake_callback(session_id, receipt_id))
-            except Exception:
-                delivered = False
-            status = "delivered" if delivered else "unknown"
-            self.db.execute(
-                """UPDATE wake_deliveries SET status=?, delivery_attempt=delivery_attempt+1,
-                acknowledged_at=? WHERE receipt_id=?""",
-                (status, _now() if delivered else None, receipt_id),
-            )
-            self.db.commit()
-            return {"result": status, "receipt_id": receipt_id, "session_id": session_id, "retryable": not delivered}
-        session = self.db.execute(
-            "SELECT session_id FROM sessions WHERE session_id=? AND archived=0", (session_id,)
-        ).fetchone()
-        if not session:
-            return {"result": "target_unresolved", "session_id": session_id}
-        if wake_callback is None:
-            return {"result": "capability_gap", "missing": ["wake_session"]}
+        """Deliver a durable receipt wake exactly once when the host supports it.
+
+        Reservation is committed before invoking the host callback.  This
+        prevents two concurrent callers from both waking the same session and
+        leaves a retryable ``pending`` row when a process stops mid-delivery.
+        """
+        with self._wake_lock:
+            existing = self.db.execute(
+                "SELECT * FROM wake_deliveries WHERE receipt_id=?", (receipt_id,)
+            ).fetchone()
+            if existing:
+                if existing["session_id"] != session_id:
+                    return {"result": "target_unresolved", "receipt_id": receipt_id, "session_id": session_id}
+                if existing["status"] == "delivered":
+                    return {"result": "duplicate", "receipt_id": receipt_id, "status": existing["status"]}
+                if wake_callback is None:
+                    return {"result": "unknown", "receipt_id": receipt_id, "status": existing["status"], "retryable": True}
+                # A pending reservation belongs to the caller that registered
+                # it.  Do not invoke the host callback a second time while the
+                # first caller may still be in flight; an unknown reservation
+                # is the explicit retry state.
+                if existing["status"] == "pending":
+                    return {"result": "unknown", "receipt_id": receipt_id, "status": "pending", "retryable": True}
+            else:
+                session = self.db.execute(
+                    "SELECT session_id FROM sessions WHERE session_id=? AND archived=0", (session_id,)
+                ).fetchone()
+                if not session:
+                    return {"result": "target_unresolved", "session_id": session_id}
+                if wake_callback is None:
+                    return {"result": "capability_gap", "missing": ["wake_session"]}
+                try:
+                    self.db.execute("BEGIN IMMEDIATE")
+                    self.db.execute(
+                        """INSERT INTO wake_deliveries
+                        (receipt_id, session_id, status, delivery_attempt, acknowledged_at, created_at)
+                        VALUES (?, ?, 'pending', 1, NULL, ?)""",
+                        (receipt_id, session_id, _now()),
+                    )
+                    self.db.commit()
+                except sqlite3.IntegrityError:
+                    self.db.rollback()
+                    existing = self.db.execute(
+                        "SELECT * FROM wake_deliveries WHERE receipt_id=?", (receipt_id,)
+                    ).fetchone()
+                    if existing and existing["session_id"] == session_id:
+                        return {"result": "duplicate", "receipt_id": receipt_id, "status": existing["status"]}
+                    return {"result": "target_unresolved", "receipt_id": receipt_id, "session_id": session_id}
+                except sqlite3.OperationalError:
+                    self.db.rollback()
+                    raise
         try:
             delivered = bool(wake_callback(session_id, receipt_id))
         except Exception:
             delivered = False
         status = "delivered" if delivered else "unknown"
-        self.db.execute(
-            """INSERT INTO wake_deliveries
-            (receipt_id, session_id, status, delivery_attempt, acknowledged_at, created_at)
-            VALUES (?, ?, ?, 1, ?, ?)""",
-            (receipt_id, session_id, status, _now() if delivered else None, _now()),
-        )
-        self.db.commit()
-        return {"result": "delivered" if delivered else "unknown", "receipt_id": receipt_id, "session_id": session_id}
+        with self._wake_lock:
+            updated = self.db.execute(
+                """UPDATE wake_deliveries SET status=?, delivery_attempt=delivery_attempt+1,
+                acknowledged_at=? WHERE receipt_id=? AND status IN ('pending', 'unknown')""",
+                (status, _now() if delivered else None, receipt_id),
+            )
+            self.db.commit()
+        return {"result": "delivered" if delivered and updated.rowcount else "unknown", "receipt_id": receipt_id, "session_id": session_id}
 
     def reconcile_attempt(self, *, project_id: str, task_id: str, attempt_id: str) -> dict[str, Any]:
         """Return the durable attempt state before a retry or recovery decision."""
@@ -2554,6 +2577,12 @@ class HostAdapter:
         if not task:
             raise AdapterError("target_unresolved")
         packet = _with_default_coordination_profile(json.loads(task["packet_json"]))
+        fence_reason = self._project_fence_reason(packet)
+        if fence_reason:
+            # The event may have been emitted by a session that was valid when
+            # dispatch happened.  Re-check the current project fence at
+            # receipt time so a stale lease or plan cannot advance the task.
+            return self._record_stale(event, fence_reason)
         self._validate_identity(packet, event)
         if event["event_type"] in {"task.accepted", "task.rejected"}:
             authority_id = packet["acceptance_authority_session_id"]
@@ -2692,6 +2721,32 @@ class HostAdapter:
             wake = self.wake_session(packet["parent_session_id"], event["event_id"], wake_callback)
         return {"result": "accepted", "event_id": event["event_id"], "status": target_state, "wake": wake}
 
+    def _project_fence_reason(self, packet: dict[str, Any]) -> str | None:
+        """Return a stable stale reason when a task no longer belongs here."""
+        project = self.db.execute(
+            """SELECT active, plan_id, plan_revision, snapshot_id,
+                      commander_session_id, commander_epoch, commander_lease_id,
+                      lease_expires_at
+               FROM projects WHERE project_id=?""",
+            (packet.get("project_id"),),
+        ).fetchone()
+        if not project:
+            return "project_fence_missing"
+        if not project["active"]:
+            return "project_inactive"
+        if _expired(project["lease_expires_at"]):
+            return "commander_lease_expired"
+        if project["commander_session_id"] != packet.get("root_session_id"):
+            return "commander_session_mismatch"
+        if project["commander_epoch"] != packet.get("commander_epoch"):
+            return "stale_commander_epoch"
+        if project["commander_lease_id"] != packet.get("commander_lease_id"):
+            return "stale_commander_lease"
+        for field in ("plan_id", "plan_revision", "snapshot_id"):
+            if project[field] != packet.get(field):
+                return f"{field}_drift"
+        return None
+
     def mark_plan_drift(self, task_id: str, by_session_id: str, reason: str = "plan_drift") -> dict[str, Any]:
         task = self.db.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         if not task:
@@ -2818,6 +2873,30 @@ class HostAdapter:
         ).fetchone()
         if active_children:
             return {"result": "children_active", "session_id": session_id}
+        project = self.db.execute(
+            "SELECT plan_id, snapshot_id, active FROM projects WHERE project_id=?",
+            (session["project_id"],),
+        ).fetchone()
+        if project and not project["active"]:
+            return {"result": "stale", "session_id": session_id, "reason": "project_inactive"}
+        cleanup_check = self.preflight(
+            project_id=session["project_id"],
+            plan_id=project["plan_id"] if project else (session["plan_id"] or ""),
+            snapshot_id=project["snapshot_id"] if project else (session["snapshot_id"] or ""),
+            target_kind=session["target_kind"],
+            canonical_target_id=session_id,
+            available_capabilities={"archive_session"},
+            checked_by=actor_session_id,
+            operation="cleanup",
+            transport="host",
+        )
+        if cleanup_check["result"] != "ready":
+            return {
+                "result": "capability_gap",
+                "session_id": session_id,
+                "missing": cleanup_check["missing_capabilities"],
+                "capability_check_id": cleanup_check["capability_check_id"],
+            }
         if not archive_callback(session_id):
             return {"result": "unknown", "session_id": session_id}
         self.db.execute(
@@ -2876,6 +2955,19 @@ class HostAdapter:
             payload=event,
             stale_reason=reason,
         )
+        if reason in {
+            "project_fence_missing", "project_inactive", "commander_lease_expired",
+            "commander_session_mismatch", "stale_commander_epoch", "stale_commander_lease",
+            "plan_id_drift", "plan_revision_drift", "snapshot_id_drift",
+        }:
+            self.db.execute(
+                "UPDATE tasks SET state='stale', updated_at=? WHERE task_id=? AND attempt_id=? AND state NOT IN ('accepted','rejected','failed','blocked','cancelled','unknown','stale')",
+                (_now(), event["task_id"], event["attempt_id"]),
+            )
+            self.db.execute(
+                "UPDATE attempts SET state='stale', updated_at=? WHERE task_id=? AND attempt_id=? AND state NOT IN ('accepted','rejected','failed','blocked','cancelled','unknown','stale')",
+                (_now(), event["task_id"], event["attempt_id"]),
+            )
         self.db.commit()
         return {"result": "stale", "event_id": event["event_id"], "reason": reason}
 

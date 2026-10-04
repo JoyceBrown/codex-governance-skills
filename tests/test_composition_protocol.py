@@ -25,6 +25,7 @@ def envelope(**overrides):
         "action_status": "READY",
         "review_status": "OPEN",
         "execution_status": "IN_PROGRESS",
+        "outcome_status": "OPEN",
         "authority_owner": "intent_summary",
         "side_effect": "none",
         "evidence_refs": ["alignment-1"],

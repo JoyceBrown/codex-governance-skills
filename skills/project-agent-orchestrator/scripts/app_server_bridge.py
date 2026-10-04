@@ -367,6 +367,7 @@ class TurnObservation:
     status: str
     error: Any = None
     task_packet: dict[str, Any] | None = None
+    recovery_gap: str | None = None
 
     @property
     def terminal(self) -> bool:
@@ -556,6 +557,7 @@ class CodexAppServerBridge:
                     "status": "",
                     "error": None,
                     "items": {},
+                    "recovery_gap": None,
                     "last_seen": time.monotonic(),
                 },
             )
@@ -575,19 +577,43 @@ class CodexAppServerBridge:
             self._prune_notification_ledger()
 
     def _prune_notification_ledger(self) -> None:
-        """Keep notification recovery bounded even when durable threads chat forever."""
+        """Keep recovery bounded without deleting active turn evidence."""
+        terminal_statuses = {
+            "completed", "success", "succeeded", "failed", "error",
+            "interrupted", "cancelled", "canceled", "aborted",
+        }
         for turns in self._notification_turns.values():
             if len(turns) > self._max_notification_turns:
                 ordered = sorted(turns, key=lambda item: float(turns[item].get("last_seen", 0)))
-                for turn_id in ordered[: len(turns) - self._max_notification_turns]:
+                removable = [
+                    turn_id for turn_id in ordered
+                    if str(turns[turn_id].get("status", "")).lower() in terminal_statuses
+                ]
+                required = len(turns) - self._max_notification_turns
+                for turn_id in removable[:required]:
                     del turns[turn_id]
+                if len(turns) > self._max_notification_turns:
+                    # Never hide an active task by trimming its turn.  Make
+                    # the capacity loss explicit for recovery callers.
+                    for state in turns.values():
+                        if str(state.get("status", "")).lower() not in terminal_statuses:
+                            state["recovery_gap"] = "active_turn_retained_over_capacity"
             for state in turns.values():
                 items = state.get("items", {})
                 if isinstance(items, dict) and len(items) > self._max_notification_items:
-                    ordered_items = list(items)
-                    for item_id in ordered_items[: len(items) - self._max_notification_items]:
-                        del items[item_id]
+                    if str(state.get("status", "")).lower() in terminal_statuses:
+                        ordered_items = list(items)
+                        for item_id in ordered_items[: len(items) - self._max_notification_items]:
+                            del items[item_id]
+                    else:
+                        state["recovery_gap"] = "active_turn_items_retained_over_capacity"
         if len(self._notification_turns) > self._max_notification_threads:
+            def thread_active(thread_id: str) -> bool:
+                return any(
+                    str(state.get("status", "")).lower() not in terminal_statuses
+                    for state in self._notification_turns[thread_id].values()
+                )
+
             ordered_threads = sorted(
                 self._notification_turns,
                 key=lambda thread_id: max(
@@ -595,8 +621,15 @@ class CodexAppServerBridge:
                     default=0,
                 ),
             )
-            for thread_id in ordered_threads[: len(self._notification_turns) - self._max_notification_threads]:
+            required = len(self._notification_turns) - self._max_notification_threads
+            removable_threads = [thread_id for thread_id in ordered_threads if not thread_active(thread_id)]
+            for thread_id in removable_threads[:required]:
                 del self._notification_turns[thread_id]
+            if len(self._notification_turns) > self._max_notification_threads:
+                for thread_id in self._notification_turns:
+                    if thread_active(thread_id):
+                        for state in self._notification_turns[thread_id].values():
+                            state["recovery_gap"] = "active_thread_retained_over_capacity"
 
     @staticmethod
     def _merge_notification_item(state: dict[str, Any], item: Any) -> None:
@@ -626,6 +659,7 @@ class CodexAppServerBridge:
                         status=str(state.get("status") or ""),
                         error=state.get("error"),
                         task_packet=self._task_packet_from_turn(synthetic),
+                        recovery_gap=state.get("recovery_gap"),
                     )
                 )
             return observations

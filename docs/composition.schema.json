@@ -17,6 +17,7 @@
     "action_status",
     "review_status",
     "execution_status",
+    "outcome_status",
     "authority_owner",
     "side_effect",
     "evidence_refs",
@@ -38,6 +39,7 @@
     "action_status": {"enum": ["READY", "WARN", "BLOCKED", "PARTIAL"]},
     "review_status": {"enum": ["PASS", "ISSUE", "ABSTAIN", "OPEN"]},
     "execution_status": {"enum": ["IN_PROGRESS", "COMPLETED", "FAILED", "UNKNOWN"]},
+    "outcome_status": {"enum": ["OPEN", "PARTIAL", "ACCEPTED", "REJECTED", "UNKNOWN"]},
     "authority_owner": {"type": "string", "minLength": 1},
     "side_effect": {"enum": ["none", "project_write", "external_write"]},
     "evidence_refs": {

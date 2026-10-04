@@ -1,0 +1,4 @@
+{
+  "case": "missing checkpoint after interruption",
+  "expected": "recovery_status=PARTIAL or BLOCKED_UNCERTAINTY; do not invent the missing plan state"
+}

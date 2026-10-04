@@ -94,7 +94,8 @@
         "atomic dispatch, dependency barriers, callback provenance and acceptance gates",
         "host delivery, wake and cleanup capability boundaries with explicit capability gaps",
         "live app-server smoke verification, ephemeral notification result recovery, and fail-closed checkpoint acknowledgement",
-        "bounded fresh-start commander reset and retire-and-recreate role lifecycle"
+        "bounded fresh-start commander reset and retire-and-recreate role lifecycle",
+        "project fence on event receipt, idempotent wake reservation, active notification retention, and host-safe cleanup preflight"
       ]
     }
   ],

@@ -93,7 +93,7 @@
       "optional_collaborators": ["bootstrap-codex-project", "durable-context", "human-centered-reasoning-guard", "tdd-loop", "execution-reliability"],
       "outputs": ["development_slice", "verification_receipt", "next_action", "run_mode"],
       "write_scope": ["authorized-project-code-tests-and-receipts"],
-      "forbidden_scope": ["cross-session-host-control", "user-authorization", "second-plan-system"],
+      "forbidden_scope": ["unverified-cross-session-host-control", "user-authorization", "second-plan-system"],
       "standalone_fallback": "Execute the current plan directly; absent helpers do not block safe local development."
     },
     {

@@ -1,0 +1,5 @@
+{
+  "case": "write signal",
+  "input": {"explicit_skill": "tdd-loop", "authorized_code_change": true, "write": true},
+  "expected": "human-centered-reasoning-guard is primary and tdd-loop is retained as gated_primary_skill"
+}

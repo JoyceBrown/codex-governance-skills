@@ -126,6 +126,21 @@ class HostAdapterTests(unittest.TestCase):
             "stale",
         )
 
+    def test_event_receipt_fences_old_project_epoch_without_manual_mark(self) -> None:
+        packet = self._packet("child-fenced")
+        self.adapter.db.execute(
+            "UPDATE projects SET commander_epoch='epoch-new', commander_lease_id='lease-new' WHERE project_id=?",
+            (packet["project_id"],),
+        )
+        self.adapter.db.commit()
+        result = self.adapter.record_event(event_template(packet, "task.started", 1))
+        self.assertEqual(result["result"], "stale")
+        self.assertEqual(result["reason"], "stale_commander_epoch")
+        self.assertEqual(
+            self.adapter.db.execute("SELECT state FROM tasks WHERE task_id=?", (packet["task_id"],)).fetchone()[0],
+            "stale",
+        )
+
     def test_handoff_can_seal_unaccepted_completion_claim_as_unknown(self) -> None:
         packet = self._packet("child-handoff-unaccepted")
         self.adapter.record_event(event_template(packet, "task.started", 1))
